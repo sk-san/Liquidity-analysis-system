@@ -9,7 +9,9 @@ import pandas as pd
 
 from abides_core import Agent, NanosecondTime
 from abides_core.utils import str_to_ns, ns_date
-
+from pathlib import Path
+from components.abides.extensions.market_data_emitter.src.abides_market_data_emitter.abides_adapter import AbidesMarketDataBridge, MarketDataEmitter
+from components.abides.extensions.market_data_emitter.src.abides_market_data_emitter.config import EmitterConfig
 from .messages.orderbook import (
     OrderAcceptedMsg,
     OrderExecutedMsg,
@@ -21,8 +23,18 @@ from .messages.orderbook import (
 from .orders import LimitOrder, MarketOrder, Order, Side
 from .price_level import PriceLevel
 
-
 logger = logging.getLogger(__name__)
+
+
+emitter = MarketDataEmitter(
+    run_id="experiment-001",
+    config=EmitterConfig(
+        endpoint="tcp://127.0.0.1:5557",
+        journal_path=Path("state/emitter.sqlite3"),
+    ),
+)
+emitter.start()
+bridge = AbidesMarketDataBridge(emitter)
 
 
 class OrderBook:
@@ -130,7 +142,6 @@ class OrderBook:
 
                 if not quiet:
                     self.owner.send_message(order.agent_id, OrderAcceptedMsg(order))
-
                 break
 
         # Now that we are done executing or accepting this order, log the new best bid and ask.
@@ -303,6 +314,19 @@ class OrderBook:
 
             order.quantity -= filled_order.quantity
 
+            bridge.order_executed(
+                current_time=self.owner.current_time,
+                symbol="ABC",
+                passive_entry_id=matched_order.order_id,
+                execution_price=matched_order.fill_price,
+                executed_quantity=matched_order.quantity,
+                passive_remaining_quantity=None,
+                aggressor_entry_id=order.order_id,
+                aggressor_side="BUY"
+                if order.side.is_bid()
+                else "SELL",
+            )
+
             logger.debug(
                 "MATCHED: new order {} vs old order {}", filled_order, matched_order
             )
@@ -400,6 +424,13 @@ class OrderBook:
                     price=order.limit_price,
                 )
             )
+            bridge.order_added(
+                current_time=self.owner.current_time,
+                order=order,
+                entry_id=None,
+                visibility="VISIBLE",
+                insert_by_id=False,
+            )
 
         if (self.owner.book_logging == True) and (quiet == False):
             # append current OB state to book_log2
@@ -408,7 +439,7 @@ class OrderBook:
     def cancel_order(
         self,
         order: LimitOrder,
-        tag: str = None,
+        tag: str = "",
         cancellation_metadata: Optional[Dict] = None,
         quiet: bool = False,
     ) -> bool:
@@ -474,6 +505,11 @@ class OrderBook:
                             else None,
                         )
                     )
+                    bridge.order_deleted(
+                        current_time=self.owner.current_time,
+                        symbol="ABC",
+                        entry_id=cancelled_order.order_id,
+                    )
 
                     self.owner.send_message(
                         order.agent_id, OrderCancelledMsg(cancelled_order)
@@ -537,7 +573,7 @@ class OrderBook:
         self,
         order: LimitOrder,
         quantity: int,
-        tag: str = None,
+        tag: str = "",
         cancellation_metadata: Optional[Dict] = None,
     ) -> None:
         """cancel a part of the quantity of an existing limit order in the order book.
@@ -570,6 +606,13 @@ class OrderBook:
                         if tag == "auctionFill"
                         else None,
                     )
+                )
+                bridge.order_partially_cancelled(
+                    current_time=self.owner.current_time,
+                    symbol="ABC",
+                    entry_id=order.order_id,
+                    cancelled_quantity=quantity,
+                    remaining_quantity=new_order.quantity,
                 )
 
                 logger.debug("CANCEL_PARTIAL: order {}", order)

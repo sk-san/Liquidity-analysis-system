@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "abides-pacing-server"
+version = "0.1.0"
+description = "Durable ZeroMQ record-and-replay pacing server for ABIDES market data"
+requires-python = ">=3.11"
+dependencies = [
+  "hft-market-data-protocol>=0.1.0",
+  "pyzmq>=25",
+]
+
+[project.scripts]
+abides-pacing-server = "pacing_server.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
