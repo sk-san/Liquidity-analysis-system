@@ -65,6 +65,7 @@ def validate_order_image(order: Mapping[str, Any]) -> None:
         "price",
         "quantity",
         "visibility",
+        "is_market_maker",
         "insert_by_id",
     }
     missing = required.difference(order)
@@ -85,6 +86,10 @@ def validate_order_image(order: Mapping[str, Any]) -> None:
     if visibility not in VISIBILITIES:
         raise ProtocolValidationError(
             f"visibility must be one of {sorted(VISIBILITIES)}"
+        )
+    if not isinstance(order["is_market_maker"], bool):
+        raise ProtocolValidationError(
+            f"is_market_maker flag must be bool"
         )
     if not isinstance(order["insert_by_id"], bool):
         raise ProtocolValidationError("insert_by_id must be a bool")

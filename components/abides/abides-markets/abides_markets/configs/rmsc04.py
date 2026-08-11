@@ -230,6 +230,7 @@ def build_config(
                 spread_alpha=mm_spread_alpha,
                 backstop_quantity=mm_backstop_quantity,
                 log_orders=log_orders,
+                is_market_maker=True,
                 random_state=np.random.RandomState(
                     seed=np.random.randint(low=0, high=2**32, dtype="uint64")
                 ),

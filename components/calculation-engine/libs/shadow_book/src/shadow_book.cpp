@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <iterator>
 #include <limits>
 #include <sstream>
 #include <stdexcept>
@@ -36,6 +37,31 @@ void fnv_mix_value(std::uint64_t& hash, const T& value) {
 
 }  // namespace
 
+template <typename Levels>
+bool ShadowBook::is_order_updated(const Levels& source, const Levels& n_diff_source) {
+    if (source.size() != n_diff_source.size()) {
+        return true;
+    }
+
+    auto source_it = source.cbegin();
+    auto diff_it = n_diff_source.cbegin();
+    for (; source_it != source.cend(); ++source_it, ++diff_it) {
+        const auto& [source_price, source_level] = *source_it;
+        const auto& [diff_price, diff_level] = *diff_it;
+        if (source_price != diff_price ||
+            source_level.price != diff_level.price ||
+            source_level.visible_quantity != diff_level.visible_quantity ||
+            source_level.hidden_quantity != diff_level.hidden_quantity ||
+            source_level.visible_mm_quantity != diff_level.visible_mm_quantity ||
+            source_level.visible != diff_level.visible ||
+            source_level.hidden != diff_level.hidden) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 ShadowBook::ShadowBook(std::string symbol, bool strict_sequence)
     : symbol_(std::move(symbol)), strict_sequence_(strict_sequence) {
     if (symbol_.empty()) {
@@ -44,7 +70,10 @@ ShadowBook::ShadowBook(std::string symbol, bool strict_sequence)
 }
 
 ApplyResult ShadowBook::apply(const MarketEvent& event) {
-    return std::visit(
+    is_bid_orderbook_changed = false;
+    is_ask_orderbook_changed = false;
+
+    auto result = std::visit(
         [this](const auto& value) -> ApplyResult {
             using Event = std::decay_t<decltype(value)>;
             if constexpr (std::is_same_v<Event, SnapshotEvent>) {
@@ -62,6 +91,12 @@ ApplyResult ShadowBook::apply(const MarketEvent& event) {
             }
         },
         event);
+
+    if (result.code != ApplyCode::Applied) {
+        is_bid_orderbook_changed = false;
+        is_ask_orderbook_changed = false;
+    }
+    return result;
 }
 
 ApplyResult ShadowBook::check_incremental_sequence(Sequence sequence) {
@@ -112,12 +147,17 @@ ApplyResult ShadowBook::apply_snapshot(const SnapshotEvent& event) {
         return rejected("invalid snapshot invariant: " + errors.front());
     }
 
+    const bool bids_changed = is_order_updated(bids_, replacement.bids_);
+    const bool asks_changed = is_order_updated(asks_, replacement.asks_);
     bids_ = std::move(replacement.bids_);
     asks_ = std::move(replacement.asks_);
     orders_ = std::move(replacement.orders_);
     trade_stats_ = replacement.trade_stats_;
     last_sequence_ = event.snapshot_sequence;
     synchronized_ = true;
+    is_bid_orderbook_changed = bids_changed;
+    is_ask_orderbook_changed = asks_changed;
+
     return applied("snapshot installed");
 }
 
@@ -251,7 +291,11 @@ ApplyResult ShadowBook::add_order(const OrderImage& order) {
     }
 
     quantity_for(level, order.visibility) += order.quantity;
+    if (order.visibility == Visibility::Visible && order.is_market_maker) {
+        level.visible_mm_quantity += order.quantity;
+    }
     orders_.emplace(order.entry_id, OrderRecord{order, iterator});
+    mark_side_changed(order.side);
     return applied();
 }
 
@@ -268,16 +312,28 @@ ApplyResult ShadowBook::delete_order(EntryId entry_id) {
         return {ApplyCode::Desynchronized, "order exists without price level"};
     }
 
-    auto& queue = queue_for(*level, image.visibility);
-    queue.erase(found->second.queue_iterator);
     auto& level_quantity = quantity_for(*level, image.visibility);
     if (level_quantity < image.quantity) {
         synchronized_ = false;
         return {ApplyCode::Desynchronized, "price-level quantity underflow"};
     }
+    if (image.visibility == Visibility::Visible && image.is_market_maker &&
+        level->visible_mm_quantity < image.quantity) {
+        synchronized_ = false;
+        return {
+            ApplyCode::Desynchronized,
+            "price-level market-maker quantity underflow"};
+    }
+
+    auto& queue = queue_for(*level, image.visibility);
+    queue.erase(found->second.queue_iterator);
     level_quantity -= image.quantity;
+    if (image.visibility == Visibility::Visible && image.is_market_maker) {
+        level->visible_mm_quantity -= image.quantity;
+    }
     orders_.erase(found);
     erase_level_if_empty(image.side, image.price);
+    mark_side_changed(image.side);
     return applied();
 }
 
@@ -305,13 +361,26 @@ ApplyResult ShadowBook::set_quantity(EntryId entry_id, Quantity new_quantity) {
         synchronized_ = false;
         return {ApplyCode::Desynchronized, "price-level quantity underflow"};
     }
+    if (record.image.visibility == Visibility::Visible && record.image.is_market_maker &&
+        delta < 0 && level->visible_mm_quantity < -delta) {
+        synchronized_ = false;
+        return {
+            ApplyCode::Desynchronized,
+            "price-level market-maker quantity underflow"};
+    }
     aggregate += delta;
+    if (record.image.visibility == Visibility::Visible && record.image.is_market_maker) {
+        level->visible_mm_quantity += delta;
+    }
     record.image.quantity = new_quantity;
 
     // Matches ABIDES PriceLevel.update_order_quantity(): reductions preserve
     // priority; increases move the order to the back of its visibility queue.
     if (new_quantity > old_quantity) {
         move_to_back(record, *level);
+    }
+    if (new_quantity != old_quantity) {
+        mark_side_changed(record.image.side);
     }
     return applied();
 }
@@ -408,6 +477,14 @@ void ShadowBook::move_to_back(OrderRecord& record, PriceLevel& level) {
     record.queue_iterator = std::prev(queue.end());
 }
 
+void ShadowBook::mark_side_changed(Side side) noexcept {
+    if (side == Side::Bid) {
+        is_bid_orderbook_changed = true;
+    } else {
+        is_ask_orderbook_changed = true;
+    }
+}
+
 TopOfBook ShadowBook::top() const {
     TopOfBook result;
     for (const auto& [price, level] : bids_) {
@@ -442,6 +519,7 @@ std::vector<LevelView> ShadowBook::make_view(
         LevelView view;
         view.price = price;
         view.visible_quantity = level.visible_quantity;
+        view.visible_mm_quantity = level.visible_mm_quantity;
         view.visible_fifo.assign(level.visible.begin(), level.visible.end());
         if (include_hidden) {
             view.hidden_quantity = level.hidden_quantity;
@@ -528,13 +606,19 @@ std::vector<std::string> ShadowBook::validate() const {
     std::unordered_map<EntryId, std::size_t> occurrences;
 
     const auto validate_levels = [this, &errors, &occurrences](Side side, const auto& levels) {
-        for (const auto& [price, level] : levels) {
+        for (const auto& level_entry : levels) {
+            const auto price = level_entry.first;
+            const auto& level = level_entry.second;
             if (price != level.price) {
                 errors.push_back("map key differs from stored level price");
             }
             Quantity visible_sum = 0;
             Quantity hidden_sum = 0;
-            const auto validate_queue = [&](Visibility visibility, const auto& queue, Quantity& sum) {
+            Quantity visible_mm_sum = 0;
+            const auto validate_queue = [&](
+                Visibility visibility,
+                const auto& queue,
+                Quantity& sum) {
                 for (const auto entry_id : queue) {
                     ++occurrences[entry_id];
                     auto found = orders_.find(entry_id);
@@ -550,12 +634,20 @@ std::vector<std::string> ShadowBook::validate() const {
                         errors.push_back("order has non-positive quantity");
                     }
                     sum += image.quantity;
+                    if (visibility == Visibility::Visible && image.is_market_maker) {
+                        visible_mm_sum += image.quantity;
+                    }
                 }
             };
+
             validate_queue(Visibility::Visible, level.visible, visible_sum);
             validate_queue(Visibility::Hidden, level.hidden, hidden_sum);
+
             if (visible_sum != level.visible_quantity) {
                 errors.push_back("visible aggregate quantity mismatch");
+            }
+            if (visible_mm_sum != level.visible_mm_quantity) {
+                errors.push_back("visible market-maker aggregate quantity mismatch");
             }
             if (hidden_sum != level.hidden_quantity) {
                 errors.push_back("hidden aggregate quantity mismatch");
@@ -590,6 +682,8 @@ void ShadowBook::clear() {
     trade_stats_ = {};
     last_sequence_ = 0;
     synchronized_ = true;
+    is_bid_orderbook_changed = false;
+    is_ask_orderbook_changed = false;
 }
 
 }  // namespace abides::shadow

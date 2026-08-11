@@ -29,9 +29,9 @@ def normalize_side(value: Any) -> str:
 
 
 def split_safe_entry_id(order_id: int, visibility: str) -> int:
-    """Generate distinct physical IDs for visible/hidden halves of one order."""
+    """Generate non-zero physical IDs for visible/hidden halves of one order."""
 
-    return (int(order_id) << 1) | (1 if visibility == "HIDDEN" else 0)
+    return ((int(order_id) + 1) << 1) | (1 if visibility == "HIDDEN" else 0)
 
 
 @dataclass(slots=True)
@@ -81,6 +81,7 @@ class AbidesOrderAdapter:
             "quantity": order_quantity,
             "visibility": visibility,
             "insert_by_id": bool(insert_by_id),
+            "is_market_maker":bool(getattr(order,"is_market_maker"))
         }
 
 

@@ -63,6 +63,19 @@ then computes metrics.
 
 ## Build
 
+The stream service requires the ZeroMQ and zlib development libraries. On
+macOS with Homebrew:
+
+```bash
+brew install zeromq zlib
+```
+
+On Debian/Ubuntu:
+
+```bash
+sudo apt-get install libzmq3-dev zlib1g-dev
+```
+
 ```bash
 cmake --preset release
 cmake --build --preset release -j
@@ -77,6 +90,30 @@ cmake --preset sanitized
 cmake --build --preset sanitized -j
 ctest --preset sanitized
 ```
+
+## Stream service
+
+`calculation_engine_service` is the transport adapter between the pacing
+server and `CalculationEngine`. It connects a ZeroMQ `PULL` socket to the
+pacing server's `PUSH` egress, validates and decodes canonical `MDP1`
+MessagePack frames, applies market events in order, and writes synchronized
+metric snapshots as newline-delimited JSON to standard output.
+
+Start it before or after the pacing server:
+
+```bash
+./build/release/calculation_engine_service \
+  --endpoint tcp://127.0.0.1:5558
+```
+
+Diagnostics and rejected/desynchronized events are written to standard error.
+Lifecycle events are observed but are not passed to the calculation engine.
+The service accepts zlib-compressed frames and resets all in-memory books when
+the `run_id` changes.
+
+Use `--help` for receive high-water mark, frame-size, metric-depth, and other
+runtime options. The service intentionally does not perform matching or put
+transport concerns inside the shadow book.
 
 ## Core API
 

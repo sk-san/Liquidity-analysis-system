@@ -61,7 +61,7 @@ EngineApplyResult CalculationEngine::apply(
     }
 
     std::optional<indicators::MarketMetrics> metrics;
-    if (apply_result.code != order_book::ApplyCode::Rejected) {
+    if (apply_result.code != order_book::ApplyCode::Rejected && apply_result.code != order_book::ApplyCode::Duplicate) {
         metrics = metrics_calculator_.calculate(
             target_book,
             market_data::exchange_time_ns(event.payload));

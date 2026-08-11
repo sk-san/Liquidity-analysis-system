@@ -70,6 +70,7 @@ class TradingAgent(FinancialAgent):
         random_state: Optional[np.random.RandomState] = None,
         starting_cash: int = 100000,
         log_orders: bool = False,
+        is_market_maker: bool = False,
     ) -> None:
         # Base class init.
         super().__init__(id, name, type, random_state)
@@ -85,7 +86,8 @@ class TradingAgent(FinancialAgent):
         if log_orders is None:
             self.log_orders = False
             self.log_to_file = False
-
+        
+        self.is_market_maker: bool = is_market_maker
         # Store starting_cash in case we want to refer to it for performance stats.
         # It should NOT be modified.  Use the 'CASH' key in self.holdings.
         # 'CASH' is always in cents!  Note that agents are limited by their starting
@@ -474,6 +476,7 @@ class TradingAgent(FinancialAgent):
             is_post_only=is_post_only,
             order_id=order_id,
             tag=tag,
+            is_market_maker=self.is_market_maker
         )
 
         if quantity > 0:

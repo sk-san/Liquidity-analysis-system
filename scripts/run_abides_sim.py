@@ -95,7 +95,12 @@ def main() -> None:
         f"agents={len(config['agents'])}, end_time={args.end_time}",
         flush=True,
     )
-    abides.run(config)
+    try:
+        abides.run(config)
+    finally:
+        from abides_markets.order_book import close_market_data_emitter
+
+        close_market_data_emitter()
     print("ABIDES_SIM_COMPLETE", flush=True)
 
 

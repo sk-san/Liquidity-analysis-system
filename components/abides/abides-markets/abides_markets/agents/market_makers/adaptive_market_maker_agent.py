@@ -46,6 +46,7 @@ class AdaptiveMarketMakerAgent(TradingAgent):
         id: int,
         symbol: str,
         starting_cash: int,
+        is_market_maker: bool,
         name: Optional[str] = None,
         type: Optional[str] = None,
         random_state: Optional[np.random.RandomState] = None,
@@ -69,8 +70,9 @@ class AdaptiveMarketMakerAgent(TradingAgent):
         min_imbalance=0.9,
     ) -> None:
 
-        super().__init__(id, name, type, random_state, starting_cash, log_orders)
+        super().__init__(id, name, type, random_state, starting_cash, log_orders, is_market_maker)
         self.is_adaptive: bool = False
+        self.is_market_maker = True
         self.symbol: str = symbol  # Symbol traded
         self.pov: float = (
             pov  # fraction of transacted volume placed at each price level

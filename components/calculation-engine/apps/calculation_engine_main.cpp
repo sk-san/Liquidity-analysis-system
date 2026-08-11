@@ -1,4 +1,5 @@
 #include "calculation_engine/engine/calculation_engine.hpp"
+#include "calculation_engine/transport/market_data_decoder.hpp"
 
 #include <cstdlib>
 #include <iomanip>
@@ -20,7 +21,7 @@ ce::market_data::OrderImage make_order(
         entry_id,
         42,
         time,
-        "TOPIX",
+        "ABM",
         side,
         price,
         quantity,
@@ -39,29 +40,28 @@ void require(const ce::engine::EngineApplyResult& result) {
 
 int main() {
     ce::engine::CalculationEngine engine;
+    // require(engine.apply({
+    //     "ABM",
+    //     10'000,
+    //     ce::market_data::SnapshotEvent{100, 1'000, "ABM", {}, std::nullopt}}));
 
-    require(engine.apply({
-        "TOPIX",
-        10'000,
-        ce::market_data::SnapshotEvent{100, 1'000, "TOPIX", {}, std::nullopt}}));
+    // require(engine.apply({
+    //     "ABM",
+    //     10'001,
+    //     ce::market_data::AddEvent{
+    //         101, 1'001, make_order(1, ce::market_data::Side::Bid, 276450, 10, 1'001)}}));
+    // require(engine.apply({
+    //     "ABM",
+    //     10'002,
+    //     ce::market_data::AddEvent{
+    //         102, 1'002, make_order(2, ce::market_data::Side::Ask, 276500, 12, 1'002)}}));
+    // require(engine.apply({
+    //     "ABM",
+    //     10'003,
+    //     ce::market_data::ExecuteEvent{
+    //         103, 1'003, 2, std::nullopt, 276500, 4, 8, ce::market_data::Side::Bid}}));
 
-    require(engine.apply({
-        "TOPIX",
-        10'001,
-        ce::market_data::AddEvent{
-            101, 1'001, make_order(1, ce::market_data::Side::Bid, 276450, 10, 1'001)}}));
-    require(engine.apply({
-        "TOPIX",
-        10'002,
-        ce::market_data::AddEvent{
-            102, 1'002, make_order(2, ce::market_data::Side::Ask, 276500, 12, 1'002)}}));
-    require(engine.apply({
-        "TOPIX",
-        10'003,
-        ce::market_data::ExecuteEvent{
-            103, 1'003, 2, std::nullopt, 276500, 4, 8, ce::market_data::Side::Bid}}));
-
-    const auto metrics = engine.latest_metrics("TOPIX");
+    const auto metrics = engine.latest_metrics("ABM");
     if (!metrics.has_value()) {
         std::cerr << "metrics unavailable\n";
         return 1;
@@ -79,5 +79,8 @@ int main() {
               << "microprice=" << metrics->microprice.value_or(0.0) << '\n'
               << "imbalance=" << metrics->top_of_book_imbalance.value_or(0.0) << '\n'
               << "traded_volume=" << metrics->traded_volume << '\n';
+            //   << "bid_liquidity_provision_ratio=" << metrics->bid_liquidity_provision_ratio << '\n';
+            //   << "ask_liquidity_provision_ratioe=" << metrics->ask_liquidity_provision_ratio << '\n';
+            //   << "is_market_maker" << metrics->is_market_maker << '\n';
     return 0;
 }

@@ -19,5 +19,11 @@ abides-pacing-server \
   --speed 1.0
 ```
 
-The calculation engine should connect a ZeroMQ `PULL` socket to the egress
-endpoint and decode the canonical MessagePack envelope.
+The repository's `calculation_engine_service` connects a ZeroMQ `PULL` socket
+to the egress endpoint, validates the canonical MessagePack envelope, and
+passes market events to the C++ calculation engine:
+
+```bash
+components/calculation-engine/build/release/calculation_engine_service \
+  --endpoint tcp://127.0.0.1:5558
+```

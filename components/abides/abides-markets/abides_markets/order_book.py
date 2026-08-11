@@ -1,7 +1,9 @@
 import logging
+import os
 import sys
 import warnings
 from copy import deepcopy
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 import numpy as np
@@ -9,9 +11,12 @@ import pandas as pd
 
 from abides_core import Agent, NanosecondTime
 from abides_core.utils import str_to_ns, ns_date
-from pathlib import Path
-from components.abides.extensions.market_data_emitter.src.abides_market_data_emitter.abides_adapter import AbidesMarketDataBridge, MarketDataEmitter
-from components.abides.extensions.market_data_emitter.src.abides_market_data_emitter.config import EmitterConfig
+from components.abides.extensions.market_data_emitter.src.abides_market_data_emitter import (
+    AbidesMarketDataBridge,
+    EmitterConfig,
+    MarketDataEmitter,
+    split_safe_entry_id,
+)
 from .messages.orderbook import (
     OrderAcceptedMsg,
     OrderExecutedMsg,
@@ -26,15 +31,51 @@ from .price_level import PriceLevel
 logger = logging.getLogger(__name__)
 
 
-emitter = MarketDataEmitter(
-    run_id="experiment-001",
-    config=EmitterConfig(
-        endpoint="tcp://127.0.0.1:5557",
-        journal_path=Path("state/emitter.sqlite3"),
-    ),
-)
-emitter.start()
-bridge = AbidesMarketDataBridge(emitter)
+def _environment_flag(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+emitter: Optional[MarketDataEmitter] = None
+bridge: Optional[AbidesMarketDataBridge] = None
+
+if _environment_flag("ABIDES_MARKET_DATA_ENABLED"):
+    emitter = MarketDataEmitter(
+        run_id=os.getenv("ABIDES_MARKET_DATA_RUN_ID", "abides-local"),
+        config=EmitterConfig(
+            endpoint=os.getenv(
+                "ABIDES_MARKET_DATA_ENDPOINT", "tcp://127.0.0.1:5557"
+            ),
+            journal_path=Path(
+                os.getenv(
+                    "ABIDES_MARKET_DATA_JOURNAL", "state/emitter.sqlite3"
+                )
+            ),
+        ),
+    )
+    emitter.start()
+    bridge = AbidesMarketDataBridge(emitter)
+
+
+def close_market_data_emitter() -> None:
+    """Flush and close the optional process-wide market-data emitter."""
+
+    global emitter, bridge
+    if emitter is None:
+        return
+    active_emitter = emitter
+    emitter = None
+    bridge = None
+    active_emitter.close(flush=True)
+
+
+def _entry_id(order: Order, *, visibility: Optional[str] = None) -> int:
+    resolved_visibility = visibility
+    if resolved_visibility is None:
+        resolved_visibility = "HIDDEN" if order.is_hidden else "VISIBLE"
+    return split_safe_entry_id(order.order_id, resolved_visibility)
 
 
 class OrderBook:
@@ -83,6 +124,14 @@ class OrderBook:
 
         self.buy_transactions: List[Tuple[NanosecondTime, int]] = []
         self.sell_transactions: List[Tuple[NanosecondTime, int]] = []
+
+        if bridge is not None:
+            bridge.snapshot(
+                current_time=self.owner.mkt_open,
+                symbol=self.symbol,
+                orders=[],
+                last_trade_price=None,
+            )
 
     def handle_limit_order(self, order: LimitOrder, quiet: bool = False) -> None:
         """Matches a limit order or adds it to the order book.
@@ -305,6 +354,7 @@ class OrderBook:
                     else "BUY",  # by def exec if from point of view of passive order being exec
                     quantity=matched_order.quantity,
                     price=matched_order.limit_price if is_ptc_exec else None,
+                    is_market_maker=matched_order.is_market_maker
                 )
             )
 
@@ -314,18 +364,26 @@ class OrderBook:
 
             order.quantity -= filled_order.quantity
 
-            bridge.order_executed(
-                current_time=self.owner.current_time,
-                symbol="ABC",
-                passive_entry_id=matched_order.order_id,
-                execution_price=matched_order.fill_price,
-                executed_quantity=matched_order.quantity,
-                passive_remaining_quantity=None,
-                aggressor_entry_id=order.order_id,
-                aggressor_side="BUY"
-                if order.side.is_bid()
-                else "SELL",
-            )
+            if bridge is not None:
+                passive_visibility = (
+                    "VISIBLE"
+                    if matched_order.is_price_to_comply
+                    else ("HIDDEN" if matched_order.is_hidden else "VISIBLE")
+                )
+                bridge.order_executed(
+                    current_time=self.owner.current_time,
+                    symbol=self.symbol,
+                    passive_entry_id=_entry_id(
+                        matched_order, visibility=passive_visibility
+                    ),
+                    execution_price=matched_order.fill_price,
+                    executed_quantity=matched_order.quantity,
+                    passive_remaining_quantity=None,
+                    aggressor_entry_id=_entry_id(order),
+                    aggressor_side=(
+                        "BUY" if order.side.is_bid() else "SELL"
+                    ),
+                )
 
             logger.debug(
                 "MATCHED: new order {} vs old order {}", filled_order, matched_order
@@ -424,13 +482,15 @@ class OrderBook:
                     price=order.limit_price,
                 )
             )
-            bridge.order_added(
-                current_time=self.owner.current_time,
-                order=order,
-                entry_id=None,
-                visibility="VISIBLE",
-                insert_by_id=False,
-            )
+            if bridge is not None:
+                visibility = "HIDDEN" if order.is_hidden else "VISIBLE"
+                bridge.order_added(
+                    current_time=self.owner.current_time,
+                    order=order,
+                    entry_id=_entry_id(order, visibility=visibility),
+                    visibility=visibility,
+                    insert_by_id=order.insert_by_id,
+                )
 
         if (self.owner.book_logging == True) and (quiet == False):
             # append current OB state to book_log2
@@ -505,11 +565,12 @@ class OrderBook:
                             else None,
                         )
                     )
-                    bridge.order_deleted(
-                        current_time=self.owner.current_time,
-                        symbol="ABC",
-                        entry_id=cancelled_order.order_id,
-                    )
+                    if bridge is not None:
+                        bridge.order_deleted(
+                            current_time=self.owner.current_time,
+                            symbol=self.symbol,
+                            entry_id=_entry_id(cancelled_order),
+                        )
 
                     self.owner.send_message(
                         order.agent_id, OrderCancelledMsg(cancelled_order)
@@ -565,6 +626,14 @@ class OrderBook:
 
                 self.last_update_ts = self.owner.current_time
 
+                if bridge is not None:
+                    bridge.order_modified(
+                        current_time=self.owner.current_time,
+                        symbol=self.symbol,
+                        entry_id=_entry_id(order),
+                        new_quantity=new_order.quantity,
+                    )
+
                 if self.owner.book_logging == True is not None:
                     # append current OB state to book_log2
                     self.append_book_log2()
@@ -607,13 +676,14 @@ class OrderBook:
                         else None,
                     )
                 )
-                bridge.order_partially_cancelled(
-                    current_time=self.owner.current_time,
-                    symbol="ABC",
-                    entry_id=order.order_id,
-                    cancelled_quantity=quantity,
-                    remaining_quantity=new_order.quantity,
-                )
+                if bridge is not None:
+                    bridge.order_partially_cancelled(
+                        current_time=self.owner.current_time,
+                        symbol=self.symbol,
+                        entry_id=_entry_id(order),
+                        cancelled_quantity=quantity,
+                        remaining_quantity=new_order.quantity,
+                    )
 
                 logger.debug("CANCEL_PARTIAL: order {}", order)
                 logger.debug(
@@ -663,6 +733,25 @@ class OrderBook:
             )
 
             self.handle_limit_order(new_order, quiet=True)
+
+            if bridge is not None:
+                if new_order.quantity > 0:
+                    visibility = "HIDDEN" if new_order.is_hidden else "VISIBLE"
+                    bridge.order_replaced(
+                        current_time=self.owner.current_time,
+                        old_entry_id=_entry_id(old_order),
+                        replacement_order=new_order,
+                        replacement_entry_id=_entry_id(
+                            new_order, visibility=visibility
+                        ),
+                        visibility=visibility,
+                    )
+                else:
+                    bridge.order_deleted(
+                        current_time=self.owner.current_time,
+                        symbol=self.symbol,
+                        entry_id=_entry_id(old_order),
+                    )
 
             logger.debug(
                 "SENT: notifications of order replacement to agent {agent_id} for old order {old_order.order_id}, new order {new_order.order_id}"

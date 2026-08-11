@@ -7,7 +7,11 @@ ABIDES Exchange / Publisher
         v
 Pacing / rate-limit server
         |
-        | RoutedMarketEvent
+        | ZeroMQ PUSH / MDP1 MessagePack
+        v
+Calculation-engine service
+        |
+        | validated RoutedMarketEvent
         v
 CalculationEngine
   +-- per-symbol ShadowBook (authoritative read model)
@@ -31,6 +35,7 @@ CalculationEngine
 
 ### Calculation engine
 
+- Receives and decodes paced frames in a transport-adapter executable.
 - Routes events by symbol.
 - Applies events to a per-symbol L3 shadow book.
 - Detects sequence gaps and exposes synchronization state.

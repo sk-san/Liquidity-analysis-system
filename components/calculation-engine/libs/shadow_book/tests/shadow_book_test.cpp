@@ -15,7 +15,8 @@ OrderImage make_order(
     Quantity quantity,
     TimestampNs time,
     Visibility visibility = Visibility::Visible,
-    bool insert_by_id = false) {
+    bool insert_by_id = false,
+    bool is_market_maker = false) {
     return OrderImage{
         entry_id,
         order_id,
@@ -26,7 +27,8 @@ OrderImage make_order(
         price,
         quantity,
         visibility,
-        insert_by_id};
+        insert_by_id,
+        is_market_maker};
 }
 
 void must_apply(ShadowBook& book, MarketEvent event) {
@@ -118,6 +120,114 @@ void test_replace_and_validation() {
     assert(book.validate().empty());
 }
 
+void test_change_flags_track_the_last_event() {
+    ShadowBook book("TEST");
+    assert(!book.is_bid_orderbook_changed);
+    assert(!book.is_ask_orderbook_changed);
+
+    must_apply(book, SnapshotEvent{60, 0, "TEST", {}, std::nullopt});
+    assert(!book.is_bid_orderbook_changed);
+    assert(!book.is_ask_orderbook_changed);
+
+    must_apply(book, AddEvent{61, 1, make_order(1, 101, Side::Bid, 100, 10, 1)});
+    assert(book.is_bid_orderbook_changed);
+    assert(!book.is_ask_orderbook_changed);
+
+    must_apply(book, AddEvent{62, 2, make_order(2, 102, Side::Ask, 101, 8, 2)});
+    assert(!book.is_bid_orderbook_changed);
+    assert(book.is_ask_orderbook_changed);
+
+    must_apply(book, ModifyEvent{63, 3, 1, 7});
+    assert(book.is_bid_orderbook_changed);
+    assert(!book.is_ask_orderbook_changed);
+
+    // An accepted no-op resets the flags without reporting a false change.
+    must_apply(book, ModifyEvent{64, 4, 1, 7});
+    assert(!book.is_bid_orderbook_changed);
+    assert(!book.is_ask_orderbook_changed);
+
+    must_apply(book, PartialCancelEvent{65, 5, 2, 2, 6});
+    assert(!book.is_bid_orderbook_changed);
+    assert(book.is_ask_orderbook_changed);
+
+    must_apply(book, ExecuteEvent{66, 6, 2, std::nullopt, 101, 2, 4, Side::Bid});
+    assert(!book.is_bid_orderbook_changed);
+    assert(book.is_ask_orderbook_changed);
+
+    must_apply(book, DeleteEvent{67, 7, 1});
+    assert(book.is_bid_orderbook_changed);
+    assert(!book.is_ask_orderbook_changed);
+
+    const auto rejected = book.apply(DeleteEvent{68, 8, 999});
+    assert(rejected.code == ApplyCode::Rejected);
+    assert(!book.is_bid_orderbook_changed);
+    assert(!book.is_ask_orderbook_changed);
+
+    const auto duplicate = book.apply(ModifyEvent{67, 9, 2, 3});
+    assert(duplicate.code == ApplyCode::Duplicate);
+    assert(!book.is_bid_orderbook_changed);
+    assert(!book.is_ask_orderbook_changed);
+
+    must_apply(book, SnapshotEvent{67, 10, "TEST", {
+        make_order(2, 102, Side::Ask, 101, 4, 2)}, std::nullopt});
+    assert(!book.is_bid_orderbook_changed);
+    assert(!book.is_ask_orderbook_changed);
+
+    must_apply(book, SnapshotEvent{68, 11, "TEST", {
+        make_order(3, 103, Side::Bid, 99, 5, 3),
+        make_order(2, 102, Side::Ask, 101, 4, 2)}, std::nullopt});
+    assert(book.is_bid_orderbook_changed);
+    assert(!book.is_ask_orderbook_changed);
+}
+
+void test_market_maker_visible_quantity_lifecycle() {
+    ShadowBook book("TEST");
+    must_apply(book, SnapshotEvent{70, 0, "TEST", {
+        make_order(
+            1, 101, Side::Bid, 100, 4, 1,
+            Visibility::Visible, false, true),
+        make_order(2, 102, Side::Bid, 100, 6, 2),
+        make_order(
+            3, 103, Side::Bid, 100, 20, 3,
+            Visibility::Hidden, false, true)}, std::nullopt});
+
+    auto level = book.l2(Side::Bid, 1).front();
+    assert(level.visible_quantity == 10);
+    assert(level.visible_mm_quantity == 4);
+    assert(book.validate().empty());
+
+    must_apply(book, ModifyEvent{71, 4, 1, 7});
+    level = book.l2(Side::Bid, 1).front();
+    assert(level.visible_quantity == 13);
+    assert(level.visible_mm_quantity == 7);
+
+    must_apply(book, PartialCancelEvent{72, 5, 2, 2, 4});
+    level = book.l2(Side::Bid, 1).front();
+    assert(level.visible_quantity == 11);
+    assert(level.visible_mm_quantity == 7);
+
+    must_apply(book, DeleteEvent{73, 6, 1});
+    level = book.l2(Side::Bid, 1).front();
+    assert(level.visible_quantity == 4);
+    assert(level.visible_mm_quantity == 0);
+    assert(book.validate().empty());
+}
+
+void test_snapshot_change_detection_includes_hidden_fifo() {
+    ShadowBook book("TEST");
+    must_apply(book, SnapshotEvent{80, 0, "TEST", {
+        make_order(
+            1, 101, Side::Bid, 100, 5, 1,
+            Visibility::Hidden)}, std::nullopt});
+
+    must_apply(book, SnapshotEvent{81, 1, "TEST", {
+        make_order(
+            2, 102, Side::Bid, 100, 5, 1,
+            Visibility::Hidden)}, std::nullopt});
+    assert(book.is_bid_orderbook_changed);
+    assert(!book.is_ask_orderbook_changed);
+}
+
 }  // namespace
 
 int main() {
@@ -126,6 +236,9 @@ int main() {
     test_gap_and_snapshot_recovery();
     test_hidden_and_ptc_entry_identity();
     test_replace_and_validation();
+    test_change_flags_track_the_last_event();
+    test_market_maker_visible_quantity_lifecycle();
+    test_snapshot_change_detection_includes_hidden_fifo();
     std::cout << "all shadow-book tests passed\n";
     return 0;
 }

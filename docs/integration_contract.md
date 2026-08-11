@@ -19,5 +19,8 @@ The stream must satisfy these rules:
    compare its delta with the ABIDES authoritative state.
 6. After a detected gap, incrementals are blocked until a new snapshot arrives.
 
-The external wire format is intentionally not prescribed. JSON, MessagePack,
-Protocol Buffers or a fixed binary schema can all map into the same C++ event types.
+The core API remains transport-independent. The bundled
+`calculation_engine_service` consumes the repository's canonical `MDP1`
+MessagePack frames over a ZeroMQ `PULL` socket. Alternative adapters may use
+JSON, Protocol Buffers, or a fixed binary schema as long as they perform the
+same validation and map into these C++ event types.

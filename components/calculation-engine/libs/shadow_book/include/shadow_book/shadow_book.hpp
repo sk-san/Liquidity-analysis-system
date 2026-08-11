@@ -16,6 +16,7 @@ namespace abides::shadow {
 struct LevelView {
     Price price{};
     Quantity visible_quantity{};
+    Quantity visible_mm_quantity{};
     Quantity hidden_quantity{};
     std::vector<EntryId> visible_fifo;
     std::vector<EntryId> hidden_fifo;
@@ -80,6 +81,11 @@ public:
     // Returns an empty vector when all structural invariants hold.
     [[nodiscard]] std::vector<std::string> validate() const;
 
+    // Describe the visible/hidden side changes made by the most recent call to
+    // apply(). Rejected, duplicate, and sequence-error events leave both false.
+    bool is_bid_orderbook_changed{false};
+    bool is_ask_orderbook_changed{false};
+
     void clear();
 
 private:
@@ -89,6 +95,7 @@ private:
         std::list<EntryId> hidden;
         Quantity visible_quantity{};
         Quantity hidden_quantity{};
+        Quantity visible_mm_quantity{};
     };
 
     struct OrderRecord {
@@ -130,6 +137,7 @@ private:
         Visibility visibility) const;
 
     void move_to_back(OrderRecord& record, PriceLevel& level);
+    void mark_side_changed(Side side) noexcept;
     [[nodiscard]] ApplyResult check_incremental_sequence(Sequence sequence);
     void commit_sequence(Sequence sequence) noexcept;
 
@@ -138,6 +146,9 @@ private:
         const Levels& levels,
         std::size_t depth,
         bool include_hidden) const;
+
+    template <typename Levels>
+    [[nodiscard]] bool is_order_updated(const Levels& source, const Levels& n_diff_source);
 
     std::string symbol_;
     bool strict_sequence_{true};

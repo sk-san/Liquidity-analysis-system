@@ -40,6 +40,7 @@ class Order(ABC):
         side: Side,
         order_id: Optional[int] = None,
         tag: Any = None,
+        is_market_maker: bool = False,
     ) -> None:
         """
         Arguments:
@@ -79,6 +80,8 @@ class Order(ABC):
 
         self.tag: Optional[Any] = tag
 
+        self.is_market_maker = is_market_maker
+
     def to_dict(self) -> Dict[str, Any]:
         as_dict = deepcopy(self).__dict__
         as_dict["time_placed"] = fmt_ts(self.time_placed)
@@ -113,9 +116,10 @@ class LimitOrder(Order):
         is_post_only=False,
         order_id: Optional[int] = None,
         tag: Optional[Any] = None,
+        is_market_maker: bool = False,
     ) -> None:
         super().__init__(
-            agent_id, time_placed, symbol, quantity, side, order_id, tag=tag
+            agent_id, time_placed, symbol, quantity, side, order_id, tag=tag, is_market_maker=is_market_maker
         )
 
         # The limit price is the minimum price the agent will accept (for a sell order) or
@@ -152,6 +156,7 @@ class LimitOrder(Order):
 
     def __deepcopy__(self, memodict={}) -> "LimitOrder":
         tag = None if self.tag is None else deepcopy(self.tag)
+        
 
         order = LimitOrder(
             self.agent_id,
@@ -166,6 +171,7 @@ class LimitOrder(Order):
             order_id=self.order_id,
             is_post_only=self.is_post_only,
             tag=tag,
+            is_market_maker=self.is_market_maker
         )
 
         order.fill_price = self.fill_price
@@ -185,9 +191,10 @@ class MarketOrder(Order):
         side: Side,
         order_id: Optional[int] = None,
         tag: Optional[Any] = None,
+        is_market_maker:bool = False,
     ) -> None:
         super().__init__(
-            agent_id, time_placed, symbol, quantity, side, order_id=order_id, tag=tag
+            agent_id, time_placed, symbol, quantity, side, order_id=order_id, tag=tag, is_market_maker=is_market_maker
         )
 
     def __str__(self) -> str:
@@ -213,6 +220,7 @@ class MarketOrder(Order):
             self.side,
             order_id=self.order_id,
             tag=tag,
+            is_market_maker=self.is_market_maker,
         )
         order.fill_price = self.fill_price
 

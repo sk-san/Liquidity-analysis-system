@@ -1,3 +1,0 @@
-This implementation was written independently as an ABIDES-JPMC-inspired read model.
-It does not copy ABIDES source code. Review the upstream ABIDES-JPMC Apache-2.0
-license when distributing an adapter or modifications derived from that project.

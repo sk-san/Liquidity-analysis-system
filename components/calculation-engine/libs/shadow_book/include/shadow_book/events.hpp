@@ -43,6 +43,7 @@ struct OrderImage {
     Quantity quantity{};
     Visibility visibility{Visibility::Visible};
     bool insert_by_id{false};
+    bool is_market_maker{false};
 };
 
 struct AddEvent {
