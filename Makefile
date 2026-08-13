@@ -10,16 +10,21 @@ PACING_INGRESS ?= tcp://127.0.0.1:5557
 CALCULATION_ENGINE_EGRESS ?= tcp://127.0.0.1:5558
 PACING_CONTROL ?= tcp://127.0.0.1:5559
 PACING_SPEED ?= 100000
+METRICS_BRIDGE_HOST ?= 127.0.0.1
+METRICS_BRIDGE_PORT ?= 8765
+METRICS_BRIDGE_HISTORY ?= 10000
+METRICS_INPUT ?= -
 
 FULL_SYSTEM_STATE ?= state/full-system
 
-.PHONY: install-dev test build-calculation-engine run-calculation-engine abides-jpmc-install abides-jpmc-sim run run-all clean
+.PHONY: install-dev test build-calculation-engine run-calculation-engine run-metrics-bridge abides-jpmc-install abides-jpmc-sim run run-all clean
 
 install-dev:
 	python -m pip install -r requirements-dev.txt
 	python -m pip install --no-build-isolation -e packages/market-data-protocol
 	python -m pip install --no-build-isolation -e components/abides/extensions/market_data_emitter
 	python -m pip install --no-build-isolation -e components/pacing-server
+	python -m pip install --no-build-isolation -e components/metrics-bridge
 
 test:
 	pytest
@@ -32,6 +37,14 @@ build-calculation-engine:
 run-calculation-engine: build-calculation-engine
 	./build/calculation-engine/calculation_engine_service \
 		--endpoint $(CALCULATION_ENGINE_EGRESS)
+
+run-metrics-bridge:
+	PYTHONPATH=components/metrics-bridge/src $(PYTHON) -m metrics_bridge.cli \
+		--input $(METRICS_INPUT) \
+		--follow \
+		--host $(METRICS_BRIDGE_HOST) \
+		--port $(METRICS_BRIDGE_PORT) \
+		--history-size $(METRICS_BRIDGE_HISTORY)
 
 $(ABIDES_READY):
 	$(PYTHON) -m venv --system-site-packages $(ABIDES_VENV)
@@ -58,6 +71,9 @@ run-all: build-calculation-engine $(ABIDES_READY)
 		--egress $(CALCULATION_ENGINE_EGRESS) \
 		--control $(PACING_CONTROL) \
 		--pacing-speed $(PACING_SPEED) \
+		--metrics-host $(METRICS_BRIDGE_HOST) \
+		--metrics-port $(METRICS_BRIDGE_PORT) \
+		--metrics-history-size $(METRICS_BRIDGE_HISTORY) \
 		--state-dir $(FULL_SYSTEM_STATE)
 
 clean:
