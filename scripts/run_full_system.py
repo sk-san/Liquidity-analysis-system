@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run ABIDES, the pacing server, and the calculation engine as one job."""
+"""Run ABIDES, pacing, calculation, and browser metrics services as one job."""
 
 from __future__ import annotations
 
@@ -9,6 +9,8 @@ import signal
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import IO, Any
@@ -19,6 +21,7 @@ LOCAL_PACKAGE_PATHS = (
     ROOT,
     ROOT / "packages" / "market-data-protocol" / "src",
     ROOT / "components" / "pacing-server" / "src",
+    ROOT / "components" / "metrics-bridge" / "src",
     ROOT / "components" / "abides" / "extensions" / "market_data_emitter" / "src",
 )
 for package_path in reversed(LOCAL_PACKAGE_PATHS):
@@ -42,7 +45,10 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--ingress", default="tcp://127.0.0.1:5557")
     parser.add_argument("--egress", default="tcp://127.0.0.1:5558")
     parser.add_argument("--control", default="tcp://127.0.0.1:5559")
-    parser.add_argument("--pacing-speed", type=float, default=100_000.0)
+    parser.add_argument("--pacing-speed", type=float, default=1.0)
+    parser.add_argument("--metrics-host", default="127.0.0.1")
+    parser.add_argument("--metrics-port", type=int, default=8765)
+    parser.add_argument("--metrics-history-size", type=int, default=10_000)
     parser.add_argument("--state-dir", type=Path, default=Path("state/full-system"))
     parser.add_argument("--startup-timeout", type=float, default=10.0)
     parser.add_argument("--drain-timeout", type=float, default=15.0)
@@ -102,9 +108,33 @@ def _wait_for_pacing(
     raise RuntimeError("pacing server did not become ready") from last_error
 
 
+def _wait_for_metrics_bridge(
+    process: subprocess.Popen[bytes], host: str, port: int, timeout: float
+) -> None:
+    connect_host = "127.0.0.1" if host in ("0.0.0.0", "::") else host
+    endpoint = f"http://{connect_host}:{port}/healthz"
+    deadline = time.monotonic() + timeout
+    last_error: BaseException | None = None
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            raise RuntimeError(
+                "metrics bridge exited during startup with code "
+                f"{process.returncode}"
+            )
+        try:
+            with urllib.request.urlopen(endpoint, timeout=0.5) as response:
+                if response.status == 200:
+                    return
+        except (OSError, urllib.error.URLError) as error:
+            last_error = error
+        time.sleep(0.1)
+    raise RuntimeError("metrics bridge did not become ready") from last_error
+
+
 def _wait_for_drain(
     pacing: subprocess.Popen[bytes],
     engine: subprocess.Popen[bytes],
+    metrics_bridge: subprocess.Popen[bytes],
     endpoint: str,
     timeout: float,
 ) -> dict[str, Any]:
@@ -118,6 +148,10 @@ def _wait_for_drain(
         if engine.poll() is not None:
             raise RuntimeError(
                 f"calculation engine exited with code {engine.returncode}"
+            )
+        if metrics_bridge.poll() is not None:
+            raise RuntimeError(
+                f"metrics bridge exited with code {metrics_bridge.returncode}"
             )
         response = _control_request(endpoint, "stats")
         latest = dict(response.get("stats", {}))
@@ -174,6 +208,10 @@ def main() -> int:
         raise FileNotFoundError(f"calculation engine not found: {engine_path}")
     if args.pacing_speed <= 0:
         raise ValueError("--pacing-speed must be positive")
+    if not 1 <= args.metrics_port <= 65_535:
+        raise ValueError("--metrics-port must be between 1 and 65535")
+    if args.metrics_history_size <= 0:
+        raise ValueError("--metrics-history-size must be positive")
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     run_id = f"{args.scenario}-{timestamp}-{os.getpid()}"
@@ -194,15 +232,54 @@ def main() -> int:
 
     pacing_log = _open_log(run_dir / "pacing.log")
     engine_log = _open_log(run_dir / "calculation-engine.log")
-    metrics_log = _open_log(run_dir / "metrics.ndjson")
+    metrics_bridge_log = _open_log(run_dir / "metrics-bridge.log")
     simulation_log = _open_log(run_dir / "simulation.log")
     pacing: subprocess.Popen[bytes] | None = None
     engine: subprocess.Popen[bytes] | None = None
+    metrics_bridge: subprocess.Popen[bytes] | None = None
+    metrics_bridge_input: IO[bytes] | None = None
 
     print(f"Full-system run: {run_id}", flush=True)
     print(f"Artifacts: {run_dir}", flush=True)
 
     try:
+        metrics_bridge = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "metrics_bridge.cli",
+                "--input",
+                "-",
+                "--archive",
+                str(run_dir / "metrics.ndjson"),
+                "--host",
+                args.metrics_host,
+                "--port",
+                str(args.metrics_port),
+                "--history-size",
+                str(args.metrics_history_size),
+            ],
+            cwd=ROOT,
+            env=environment,
+            stdin=subprocess.PIPE,
+            stdout=metrics_bridge_log,
+            stderr=subprocess.STDOUT,
+        )
+        metrics_bridge_input = metrics_bridge.stdin
+        if metrics_bridge_input is None:
+            raise RuntimeError("metrics bridge stdin pipe was not created")
+        _wait_for_metrics_bridge(
+            metrics_bridge,
+            args.metrics_host,
+            args.metrics_port,
+            args.startup_timeout,
+        )
+        print(
+            "Metrics bridge: "
+            f"http://{args.metrics_host}:{args.metrics_port}/api/v1/metrics/stream",
+            flush=True,
+        )
+
         pacing = subprocess.Popen(
             [
                 sys.executable,
@@ -230,9 +307,11 @@ def main() -> int:
             [str(engine_path), "--endpoint", args.egress],
             cwd=ROOT,
             env=environment,
-            stdout=metrics_log,
+            stdout=metrics_bridge_input,
             stderr=engine_log,
         )
+        metrics_bridge_input.close()
+        metrics_bridge_input = None
         time.sleep(0.25)
         if engine.poll() is not None:
             raise RuntimeError(
@@ -268,7 +347,11 @@ def main() -> int:
             )
 
         stats = _wait_for_drain(
-            pacing, engine, args.control, args.drain_timeout
+            pacing,
+            engine,
+            metrics_bridge,
+            args.control,
+            args.drain_timeout,
         )
         _validate_engine_log(run_dir / "calculation-engine.log")
         metric_count = sum(
@@ -289,7 +372,10 @@ def main() -> int:
         )
         return 0
     finally:
+        if metrics_bridge_input is not None:
+            metrics_bridge_input.close()
         _stop_process(engine)
+        _stop_process(metrics_bridge)
         if pacing is not None and pacing.poll() is None:
             try:
                 _control_request(args.control, "stop")
@@ -297,7 +383,7 @@ def main() -> int:
                 pass
         _stop_process(pacing)
         simulation_log.close()
-        metrics_log.close()
+        metrics_bridge_log.close()
         engine_log.close()
         pacing_log.close()
 

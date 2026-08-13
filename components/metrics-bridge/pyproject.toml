@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "liquidity-metrics-bridge"
+version = "0.1.0"
+description = "Browser-facing HTTP and SSE bridge for calculation-engine metric snapshots"
+requires-python = ">=3.11"
+
+[project.scripts]
+liquidity-metrics-bridge = "metrics_bridge.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

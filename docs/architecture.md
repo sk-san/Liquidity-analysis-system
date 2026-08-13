@@ -17,6 +17,12 @@ CalculationEngine
   +-- per-symbol ShadowBook (authoritative read model)
   +-- MarketMetricsCalculator
   +-- latest immutable metric snapshot
+        |
+        | NDJSON metric records over stdout
+        v
+Metrics bridge
+  +-- latest-metric HTTP endpoint
+  +-- browser-native SSE stream
 ```
 
 ## Responsibilities
@@ -41,6 +47,13 @@ CalculationEngine
 - Detects sequence gaps and exposes synchronization state.
 - Computes read-only market metrics.
 - Never performs live matching.
+
+### Metrics bridge
+
+- Validates calculation-engine metric records against the `metrics.ndjson` shape.
+- Retains the latest metric per symbol and a bounded reconnect history.
+- Delivers metrics to browsers through HTTP and Server-Sent Events.
+- Reports replay-window and slow-client gaps explicitly instead of hiding loss.
 
 ## Threading model
 

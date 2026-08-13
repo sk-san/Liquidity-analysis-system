@@ -1,6 +1,7 @@
 # Liquidity analysis system
 
-Run the complete ABIDES → pacing server → calculation engine pipeline with:
+Run the complete ABIDES → pacing server → calculation engine → browser metrics
+bridge pipeline with:
 
 ```bash
 make run
@@ -12,6 +13,17 @@ scenario, waits for all market-data messages to drain, and then shuts the
 services down. Each run writes metrics and component logs below
 `state/full-system/<run-id>/`.
 
+While a run is active, calculated metrics are available at:
+
+```text
+http://127.0.0.1:8765/api/v1/metrics/latest
+http://127.0.0.1:8765/api/v1/metrics/stream
+```
+
+The stream uses browser-native Server-Sent Events. No UI is included. See
+`components/metrics-bridge/README.md` for filtering, replay, CORS, and standalone
+usage.
+
 For a short smoke run or a different scenario:
 
 ```bash
@@ -21,7 +33,8 @@ make run ABIDES_SCENARIO=rmsc03 ABIDES_SEED=7
 
 The simulation clock is replayed at `PACING_SPEED=1000000` by default. Endpoints,
 speed, scenario, seed, end time, and output directory can all be overridden with
-the variables defined at the top of the `Makefile`.
+the variables defined at the top of the `Makefile`. The bridge bind address and
+port are controlled by `METRICS_BRIDGE_HOST` and `METRICS_BRIDGE_PORT`.
 
 The runnable calculation-engine service lives in
 `components/calculation-engine`. Build and start its ZeroMQ receiver with:

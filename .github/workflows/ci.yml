@@ -9,6 +9,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install ZeroMQ
+        # Required by CALCULATION_ENGINE_BUILD_SERVICE, which the release
+        # preset enables. The service uses the C API (<zmq.h>).
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libzmq3-dev
       - name: Configure
         run: cmake --preset release
       - name: Build

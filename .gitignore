@@ -12,3 +12,5 @@
 /.venv-abides/
 /log/
 /state/
+__pycache__/
+.pytest_cache/
