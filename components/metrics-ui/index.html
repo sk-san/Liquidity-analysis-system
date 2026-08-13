@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Liquidity metrics — live</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M1 10l3-3 3 2 4-5 4 3' fill='none' stroke='%232a78d6' stroke-width='1.6'/%3E%3Cpath d='M1 13l3-1.5 3 .5 4-2 4 1' fill='none' stroke='%23eb6834' stroke-width='1.6'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+<div class="frame">
+
+  <header class="masthead">
+    <div class="brand">
+      Liquidity Analysis
+      <small>market-maker liquidity monitor</small>
+    </div>
+    <div class="mast-status">
+      <label class="symbol-field">Symbol
+        <select id="symbolSel" aria-label="Symbol"></select>
+      </label>
+      <span class="pill" id="conn" data-state="connecting" role="status">
+        <span class="dot"></span><span>Connecting…</span>
+      </span>
+      <div class="clock" id="clock">--:--:--.---<small>sim</small></div>
+    </div>
+  </header>
+
+  <div class="banner" id="banner" role="status" hidden></div>
+
+  <section class="controls" aria-label="Display controls">
+    <div class="chip-group" role="group" aria-label="Time window">
+      <span class="win-label">Window</span>
+      <button data-win="2m" aria-pressed="false">2m</button>
+      <button data-win="5m" aria-pressed="true">5m</button>
+      <button data-win="15m" aria-pressed="false">15m</button>
+      <button data-win="all" aria-pressed="false">All</button>
+    </div>
+    <button class="ctl-btn" id="pauseBtn" aria-pressed="false">Pause</button>
+    <button class="ctl-btn" id="tableBtn" aria-pressed="false">Table</button>
+    <div class="run-line" id="runLine">no run yet</div>
+  </section>
+
+  <section class="tiles" aria-label="Latest metrics">
+    <article class="tile hero">
+      <h2>Midprice</h2>
+      <div class="value" id="t-mid">—</div>
+      <div class="sub" id="t-mid-sub">waiting for data</div>
+    </article>
+    <article class="tile">
+      <h2><span class="key" style="--k: var(--series-bid)"></span>Best bid</h2>
+      <div class="value" id="t-bid">—</div>
+      <div class="sub" id="t-bid-sub">—</div>
+    </article>
+    <article class="tile">
+      <h2><span class="key" style="--k: var(--series-ask)"></span>Best ask</h2>
+      <div class="value" id="t-ask">—</div>
+      <div class="sub" id="t-ask-sub">—</div>
+    </article>
+    <article class="tile">
+      <h2>MM share of depth</h2>
+      <div class="meter" id="m-bid" style="--k: var(--series-bid)">
+        <span>Bid</span>
+        <span class="track"><span class="fill"></span></span>
+        <span class="num">—</span>
+      </div>
+      <div class="meter" id="m-ask" style="--k: var(--series-ask)">
+        <span>Ask</span>
+        <span class="track"><span class="fill"></span></span>
+        <span class="num">—</span>
+      </div>
+    </article>
+    <article class="tile">
+      <h2>Imbalance</h2>
+      <div class="value" id="t-imb">—</div>
+      <div class="sub" id="t-imb-sub">—</div>
+      <div class="imb-scale"><span class="needle" id="imbNeedle"></span></div>
+    </article>
+    <article class="tile">
+      <h2>Traded volume</h2>
+      <div class="value" id="t-act">—</div>
+      <div class="sub" id="t-act-sub">—</div>
+    </article>
+  </section>
+
+  <main
+    class="strip"
+    id="strip"
+    tabindex="0"
+    aria-label="Metric history charts. Values are listed in each channel readout; open the table view for full records."
+  >
+    <section class="channel">
+      <header>
+        <h2>Price</h2>
+        <div class="readout">
+          <span><span class="key" style="--k: var(--series-price)"></span>Mid <b id="ro-mid">—</b></span>
+          <span><span class="key" style="--k: var(--series-trade)"></span>Last trade <b id="ro-last">—</b></span>
+          <span>Micro <b id="ro-micro">—</b></span>
+        </div>
+      </header>
+      <canvas id="c-price" aria-hidden="true"></canvas>
+    </section>
+    <section class="channel">
+      <header>
+        <h2>Market-maker share of visible depth</h2>
+        <div class="readout">
+          <span><span class="key" style="--k: var(--series-bid)"></span>Bid <b id="ro-lpr-bid">—</b></span>
+          <span><span class="key" style="--k: var(--series-ask)"></span>Ask <b id="ro-lpr-ask">—</b></span>
+        </div>
+      </header>
+      <canvas id="c-lpr" aria-hidden="true"></canvas>
+    </section>
+    <section class="channel">
+      <header>
+        <h2>Top-of-book imbalance</h2>
+        <div class="readout">
+          <span><span class="key" style="--k: var(--series-bid)"></span>bid-heavy</span>
+          <span><span class="key" style="--k: var(--series-ask)"></span>ask-heavy</span>
+          <span>Value <b id="ro-imb">—</b></span>
+        </div>
+      </header>
+      <canvas id="c-imb" aria-hidden="true"></canvas>
+    </section>
+    <section class="channel">
+      <header>
+        <h2>Visible depth · top 10 levels</h2>
+        <div class="readout">
+          <span><span class="key" style="--k: var(--series-bid)"></span>Bid <b id="ro-depth-bid">—</b></span>
+          <span><span class="key" style="--k: var(--series-ask)"></span>Ask <b id="ro-depth-ask">—</b></span>
+        </div>
+      </header>
+      <canvas id="c-depth" aria-hidden="true"></canvas>
+    </section>
+    <div class="time-chip" id="timeChip" hidden></div>
+    <p class="hint">Hover or focus the charts to inspect · ← → step through records · Esc back to live</p>
+  </main>
+
+  <section class="table-panel" id="tablePanel" hidden>
+    <table>
+      <caption>Most recent 40 records</caption>
+      <thead>
+        <tr>
+          <th scope="col">time (sim)</th>
+          <th scope="col">mid</th>
+          <th scope="col">spread</th>
+          <th scope="col">bid</th>
+          <th scope="col">bid qty</th>
+          <th scope="col">ask</th>
+          <th scope="col">ask qty</th>
+          <th scope="col">imb</th>
+          <th scope="col">mm bid</th>
+          <th scope="col">mm ask</th>
+          <th scope="col">depth bid</th>
+          <th scope="col">depth ask</th>
+          <th scope="col">trades</th>
+          <th scope="col">volume</th>
+          <th scope="col">sync</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </section>
+
+  <footer class="feed">
+    <h2>Events</h2>
+    <ul id="feed"></ul>
+  </footer>
+
+</div>
+<script src="assets/format.js"></script>
+<script src="assets/stream.js"></script>
+<script src="assets/charts.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>

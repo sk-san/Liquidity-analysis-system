@@ -40,6 +40,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="allowed browser Origin; repeat as needed (default: *)",
     )
     parser.add_argument(
+        "--ui-dir",
+        type=Path,
+        help="serve this static browser-UI directory at / (default: API only)",
+    )
+    parser.add_argument(
         "--log-level",
         choices=("DEBUG", "INFO", "WARNING", "ERROR"),
         default="INFO",
@@ -107,6 +112,7 @@ def main(argv: list[str] | None = None) -> int:
         stop_event=stop_event,
         cors_origins=tuple(args.cors_origins or ("*",)),
         heartbeat_seconds=args.heartbeat_seconds,
+        ui_dir=args.ui_dir,
     )
     ingestion_thread: threading.Thread | None = None
     archive: TextIO | None = None
@@ -125,6 +131,8 @@ def main(argv: list[str] | None = None) -> int:
         ingestion_thread, archive = _start_ingestion(args, store, stop_event)
         host, port = server.address
         print(f"metrics bridge listening on http://{host}:{port}", file=sys.stderr)
+        if args.ui_dir is not None:
+            print(f"metrics UI served at http://{host}:{port}/", file=sys.stderr)
         server.serve_forever()
         return 0
     finally:

@@ -49,6 +49,22 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--metrics-host", default="127.0.0.1")
     parser.add_argument("--metrics-port", type=int, default=8765)
     parser.add_argument("--metrics-history-size", type=int, default=10_000)
+    parser.add_argument(
+        "--ui-dir",
+        type=Path,
+        default=ROOT / "components" / "metrics-ui",
+        help="static browser UI served by the metrics bridge at /",
+    )
+    parser.add_argument(
+        "--no-ui",
+        action="store_true",
+        help="serve the metrics API without the browser UI",
+    )
+    parser.add_argument(
+        "--hold",
+        action="store_true",
+        help="keep the metrics bridge and UI serving after the run drains",
+    )
     parser.add_argument("--state-dir", type=Path, default=Path("state/full-system"))
     parser.add_argument("--startup-timeout", type=float, default=10.0)
     parser.add_argument("--drain-timeout", type=float, default=15.0)
@@ -212,6 +228,9 @@ def main() -> int:
         raise ValueError("--metrics-port must be between 1 and 65535")
     if args.metrics_history_size <= 0:
         raise ValueError("--metrics-history-size must be positive")
+    ui_dir: Path | None = None if args.no_ui else args.ui_dir.resolve()
+    if ui_dir is not None and not (ui_dir / "index.html").is_file():
+        raise FileNotFoundError(f"metrics UI not found: {ui_dir}")
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     run_id = f"{args.scenario}-{timestamp}-{os.getpid()}"
@@ -258,6 +277,7 @@ def main() -> int:
                 str(args.metrics_port),
                 "--history-size",
                 str(args.metrics_history_size),
+                *(("--ui-dir", str(ui_dir)) if ui_dir is not None else ()),
             ],
             cwd=ROOT,
             env=environment,
@@ -279,6 +299,11 @@ def main() -> int:
             f"http://{args.metrics_host}:{args.metrics_port}/api/v1/metrics/stream",
             flush=True,
         )
+        if ui_dir is not None:
+            print(
+                f"Metrics UI: http://{args.metrics_host}:{args.metrics_port}/",
+                flush=True,
+            )
 
         pacing = subprocess.Popen(
             [
@@ -370,6 +395,26 @@ def main() -> int:
             f"{run_dir / 'metrics.ndjson'}",
             flush=True,
         )
+        if args.hold:
+            _stop_process(engine)
+            engine = None
+            try:
+                _control_request(args.control, "stop")
+            except (RuntimeError, zmq.ZMQError):
+                pass
+            _stop_process(pacing)
+            pacing = None
+            print(
+                "Holding: metrics UI stays at "
+                f"http://{args.metrics_host}:{args.metrics_port}/ "
+                "(Ctrl-C to stop)",
+                flush=True,
+            )
+            try:
+                while metrics_bridge.poll() is None:
+                    time.sleep(0.5)
+            except KeyboardInterrupt:
+                pass
         return 0
     finally:
         if metrics_bridge_input is not None:

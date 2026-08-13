@@ -23,6 +23,13 @@ CalculationEngine
 Metrics bridge
   +-- latest-metric HTTP endpoint
   +-- browser-native SSE stream
+  +-- static metrics-UI hosting
+        |
+        | SSE metric events
+        v
+Metrics UI (browser)
+  +-- instrument tiles and strip charts
+  +-- gap / reset / desync surfacing
 ```
 
 ## Responsibilities
@@ -54,6 +61,16 @@ Metrics bridge
 - Retains the latest metric per symbol and a bounded reconnect history.
 - Delivers metrics to browsers through HTTP and Server-Sent Events.
 - Reports replay-window and slow-client gaps explicitly instead of hiding loss.
+- Optionally serves the static browser UI; it never interprets metric values.
+
+### Metrics UI
+
+- Renders the stream in the browser: instrument tiles, shared-axis strip
+  charts, and a table view, with no third-party dependencies.
+- Deduplicates reconnect replays by `transport_sequence` and resets on a new
+  `run_id`.
+- Draws reported gaps as breaks in the data and keeps desynchronized records
+  visibly flagged as diagnostics.
 
 ## Threading model
 

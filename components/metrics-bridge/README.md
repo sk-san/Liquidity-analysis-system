@@ -2,7 +2,9 @@
 
 The metrics bridge validates the calculation engine's newline-delimited JSON
 output and makes it available to a browser over HTTP and Server-Sent Events
-(SSE). It has no UI and no third-party runtime dependencies.
+(SSE). It has no third-party runtime dependencies. Passing `--ui-dir <path>`
+additionally serves a static browser UI (such as `components/metrics-ui`) at
+`/`; without the flag the bridge stays API-only.
 
 ## Live input
 
@@ -29,6 +31,8 @@ liquidity-metrics-bridge \
 
 ## Browser API
 
+- `GET /` — the static UI, when `--ui-dir` is set (API routes keep precedence;
+  file paths are resolved strictly inside the UI directory).
 - `GET /healthz` — ingestion and connection counters.
 - `GET /api/v1/metrics/schema` — JSON Schema for metric records.
 - `GET /api/v1/metrics/latest` — latest record for every symbol.

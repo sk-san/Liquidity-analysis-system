@@ -49,11 +49,13 @@ def metric(*, sequence: int = 7, symbol: str = "ABM") -> dict[str, object]:
 @contextmanager
 def running_server(
     store: MetricStore,
+    ui_dir: Path | None = None,
 ) -> Iterator[tuple[MetricsBridgeServer, threading.Thread]]:
     server = MetricsBridgeServer(
         port=0,
         store=store,
         heartbeat_seconds=0.1,
+        ui_dir=ui_dir,
     )
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -162,6 +164,76 @@ def test_slow_subscriber_gets_an_explicit_gap_notice() -> None:
     assert isinstance(delivered, PublishedMetric)
     assert delivered.metric["transport_sequence"] == 2
     store.unsubscribe(subscription.subscriber)
+
+
+def _get(
+    host: str, port: int, path: str
+) -> tuple[int, dict[str, str], bytes]:
+    connection = http.client.HTTPConnection(host, port, timeout=2)
+    try:
+        connection.request("GET", path)
+        response = connection.getresponse()
+        return (
+            response.status,
+            {key.lower(): value for key, value in response.getheaders()},
+            response.read(),
+        )
+    finally:
+        connection.close()
+
+
+def test_serves_static_ui_when_configured(tmp_path: Path) -> None:
+    ui_dir = tmp_path / "ui"
+    (ui_dir / "assets").mkdir(parents=True)
+    (ui_dir / "index.html").write_text("<!doctype html><p>metrics ui</p>", "utf-8")
+    (ui_dir / "assets" / "app.js").write_text("console.log('ui');\n", "utf-8")
+    (tmp_path / "secret.html").write_text("outside", "utf-8")
+    store = MetricStore()
+    store.publish(metric(sequence=3))
+
+    with running_server(store, ui_dir=ui_dir) as (server, _):
+        host, port = server.address
+
+        status, headers, body = _get(host, port, "/")
+        assert status == 200
+        assert headers["content-type"] == "text/html; charset=utf-8"
+        assert b"metrics ui" in body
+
+        status, headers, body = _get(host, port, "/assets/app.js")
+        assert status == 200
+        assert headers["content-type"] == "text/javascript; charset=utf-8"
+        assert body.startswith(b"console.log")
+
+        # API routes keep precedence over static files.
+        status, _, body = _get(host, port, "/api/v1/metrics/latest?symbol=ABM")
+        assert status == 200
+        assert json.loads(body)["metric"]["transport_sequence"] == 3
+
+        for traversal in (
+            "/../secret.html",
+            "/assets/../../secret.html",
+            "/%2e%2e/secret.html",
+            "/..%2fsecret.html",
+        ):
+            status, _, body = _get(host, port, traversal)
+            assert status == 404, traversal
+            assert b"outside" not in body
+
+        status, _, _ = _get(host, port, "/missing.html")
+        assert status == 404
+
+
+def test_root_stays_not_found_without_ui_dir() -> None:
+    with running_server(MetricStore()) as (server, _):
+        host, port = server.address
+        status, _, body = _get(host, port, "/")
+        assert status == 404
+        assert json.loads(body) == {"error": "not_found"}
+
+
+def test_rejects_missing_ui_dir(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="ui_dir"):
+        MetricsBridgeServer(port=0, ui_dir=tmp_path / "nope")
 
 
 def test_http_latest_and_sse_endpoints() -> None:

@@ -14,6 +14,8 @@ METRICS_BRIDGE_HOST ?= 127.0.0.1
 METRICS_BRIDGE_PORT ?= 8765
 METRICS_BRIDGE_HISTORY ?= 10000
 METRICS_INPUT ?= -
+METRICS_UI_DIR ?= components/metrics-ui
+METRICS_HOLD ?= 0
 
 FULL_SYSTEM_STATE ?= state/full-system
 
@@ -44,7 +46,8 @@ run-metrics-bridge:
 		--follow \
 		--host $(METRICS_BRIDGE_HOST) \
 		--port $(METRICS_BRIDGE_PORT) \
-		--history-size $(METRICS_BRIDGE_HISTORY)
+		--history-size $(METRICS_BRIDGE_HISTORY) \
+		$(if $(METRICS_UI_DIR),--ui-dir $(METRICS_UI_DIR),)
 
 $(ABIDES_READY):
 	$(PYTHON) -m venv --system-site-packages $(ABIDES_VENV)
@@ -74,7 +77,9 @@ run-all: build-calculation-engine $(ABIDES_READY)
 		--metrics-host $(METRICS_BRIDGE_HOST) \
 		--metrics-port $(METRICS_BRIDGE_PORT) \
 		--metrics-history-size $(METRICS_BRIDGE_HISTORY) \
-		--state-dir $(FULL_SYSTEM_STATE)
+		--state-dir $(FULL_SYSTEM_STATE) \
+		$(if $(METRICS_UI_DIR),--ui-dir $(METRICS_UI_DIR),--no-ui) \
+		$(if $(filter 1,$(METRICS_HOLD)),--hold,)
 
 clean:
 	rm -rf build .pytest_cache state

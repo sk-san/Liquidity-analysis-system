@@ -5,14 +5,41 @@ import logging
 import threading
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 from .model import METRIC_JSON_SCHEMA
 from .store import GapNotice, MetricStore, PublishedMetric
 
 
 logger = logging.getLogger(__name__)
+
+_UI_CONTENT_TYPES = {
+    ".html": "text/html; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".json": "application/json; charset=utf-8",
+    ".png": "image/png",
+    ".ico": "image/x-icon",
+}
+
+
+def _resolve_ui_file(ui_dir: Path, url_path: str) -> Path | None:
+    relative = unquote(url_path)
+    if "\x00" in relative:
+        return None
+    candidate = (ui_dir / relative.lstrip("/")).resolve()
+    if candidate != ui_dir and ui_dir not in candidate.parents:
+        return None
+    if candidate.is_dir():
+        candidate = candidate / "index.html"
+    if candidate.suffix.lower() not in _UI_CONTENT_TYPES:
+        return None
+    if not candidate.is_file():
+        return None
+    return candidate
 
 
 class _MetricsHTTPServer(ThreadingHTTPServer):
@@ -27,11 +54,13 @@ class _MetricsHTTPServer(ThreadingHTTPServer):
         stop_event: threading.Event,
         cors_origins: tuple[str, ...],
         heartbeat_seconds: float,
+        ui_dir: Path | None,
     ) -> None:
         self.store = store
         self.stop_event = stop_event
         self.cors_origins = cors_origins
         self.heartbeat_seconds = heartbeat_seconds
+        self.ui_dir = ui_dir
         super().__init__(server_address, _MetricsRequestHandler)
 
 
@@ -121,7 +150,30 @@ class _MetricsRequestHandler(BaseHTTPRequestHandler):
         if request.path == "/api/v1/metrics/stream":
             self._send_stream(parse_qs(request.query))
             return
+        if self._send_ui_file(request.path):
+            return
         self._send_json(HTTPStatus.NOT_FOUND, {"error": "not_found"})
+
+    def _send_ui_file(self, url_path: str) -> bool:
+        ui_dir = self.metrics_server.ui_dir
+        if ui_dir is None:
+            return False
+        resolved = _resolve_ui_file(ui_dir, url_path)
+        if resolved is None:
+            return False
+        try:
+            body = resolved.read_bytes()
+        except OSError:
+            return False
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", _UI_CONTENT_TYPES[resolved.suffix.lower()])
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(body)
+        self.close_connection = True
+        return True
 
     def _send_latest(self, query: dict[str, list[str]]) -> None:
         symbol = _one_query_value(query, "symbol")
@@ -233,6 +285,7 @@ class MetricsBridgeServer:
         stop_event: threading.Event | None = None,
         cors_origins: tuple[str, ...] = ("*",),
         heartbeat_seconds: float = 15.0,
+        ui_dir: str | Path | None = None,
     ) -> None:
         if not 0 <= port <= 65_535:
             raise ValueError("port must be between 0 and 65535")
@@ -240,6 +293,11 @@ class MetricsBridgeServer:
             raise ValueError("heartbeat_seconds must be positive")
         if not cors_origins:
             raise ValueError("at least one CORS origin is required")
+        resolved_ui_dir: Path | None = None
+        if ui_dir is not None:
+            resolved_ui_dir = Path(ui_dir).resolve()
+            if not resolved_ui_dir.is_dir():
+                raise ValueError(f"ui_dir is not a directory: {ui_dir}")
         self.store = store or MetricStore()
         self.stop_event = stop_event or threading.Event()
         self._httpd = _MetricsHTTPServer(
@@ -248,6 +306,7 @@ class MetricsBridgeServer:
             stop_event=self.stop_event,
             cors_origins=cors_origins,
             heartbeat_seconds=heartbeat_seconds,
+            ui_dir=resolved_ui_dir,
         )
 
     @property
