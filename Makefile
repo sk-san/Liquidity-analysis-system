@@ -9,6 +9,7 @@ ABIDES_READY := $(ABIDES_VENV)/.ready
 PACING_INGRESS ?= tcp://127.0.0.1:5557
 CALCULATION_ENGINE_EGRESS ?= tcp://127.0.0.1:5558
 PACING_CONTROL ?= tcp://127.0.0.1:5559
+METRICS_INGRESS ?= tcp://127.0.0.1:5560
 PACING_SPEED ?= 100000
 METRICS_BRIDGE_HOST ?= 127.0.0.1
 METRICS_BRIDGE_PORT ?= 8765
@@ -73,6 +74,7 @@ run-all: build-calculation-engine $(ABIDES_READY)
 		--ingress $(PACING_INGRESS) \
 		--egress $(CALCULATION_ENGINE_EGRESS) \
 		--control $(PACING_CONTROL) \
+		--metrics-ingress $(METRICS_INGRESS) \
 		--pacing-speed $(PACING_SPEED) \
 		--metrics-host $(METRICS_BRIDGE_HOST) \
 		--metrics-port $(METRICS_BRIDGE_PORT) \

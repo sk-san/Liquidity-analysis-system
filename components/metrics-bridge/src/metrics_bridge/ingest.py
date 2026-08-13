@@ -11,6 +11,12 @@ from .store import MetricStore
 
 logger = logging.getLogger(__name__)
 
+ZMQ_SCHEMES = ("tcp://", "ipc://", "inproc://")
+
+
+def is_zmq_endpoint(value: str) -> bool:
+    return value.startswith(ZMQ_SCHEMES)
+
 
 def ingest_stream(
     stream: TextIO,
@@ -62,6 +68,70 @@ def ingest_stream(
                 archive.flush()
             store.publish(metric)
     finally:
+        store.mark_source_eof()
+
+
+def ingest_zmq(
+    endpoint: str,
+    store: MetricStore,
+    *,
+    stop_event: threading.Event,
+    poll_interval: float = 0.25,
+    archive: TextIO | None = None,
+) -> None:
+    """Bind a ZeroMQ PULL socket and ingest one metric record per message.
+
+    pyzmq is an optional dependency: stdin and file input work without it.
+    """
+    try:
+        import zmq
+    except ImportError as error:  # pragma: no cover - environment-specific
+        raise RuntimeError(
+            "ZeroMQ input requires pyzmq "
+            "(pip install 'liquidity-metrics-bridge[zmq]')"
+        ) from error
+
+    socket = zmq.Context.instance().socket(zmq.PULL)
+    socket.setsockopt(zmq.RCVHWM, 100_000)
+    socket.setsockopt(zmq.LINGER, 0)
+    socket.bind(endpoint)
+    record_number = 0
+    try:
+        while not stop_event.is_set():
+            if socket.poll(timeout=int(poll_interval * 1000)) == 0:
+                continue
+            payload = socket.recv()
+            record_number += 1
+            try:
+                stripped = payload.decode("utf-8").strip()
+            except UnicodeDecodeError as error:
+                store.record_invalid()
+                logger.warning(
+                    "discarding undecodable metric at %s #%d: %s",
+                    endpoint,
+                    record_number,
+                    error,
+                )
+                continue
+            if not stripped:
+                continue
+            try:
+                metric = parse_metric_line(stripped)
+            except MetricValidationError as error:
+                store.record_invalid()
+                logger.warning(
+                    "discarding invalid metric at %s #%d: %s",
+                    endpoint,
+                    record_number,
+                    error,
+                )
+                continue
+            if archive is not None:
+                archive.write(stripped + "\n")
+                archive.flush()
+            store.publish(metric)
+    finally:
+        socket.close(linger=0)
         store.mark_source_eof()
 
 

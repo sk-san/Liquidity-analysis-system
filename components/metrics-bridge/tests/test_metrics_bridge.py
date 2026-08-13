@@ -11,7 +11,7 @@ from typing import Iterator
 
 import pytest
 
-from metrics_bridge.ingest import ingest_path, ingest_stream
+from metrics_bridge.ingest import ingest_path, ingest_stream, ingest_zmq
 from metrics_bridge.model import MetricValidationError, parse_metric_line
 from metrics_bridge.server import MetricsBridgeServer
 from metrics_bridge.store import GapNotice, MetricStore, PublishedMetric
@@ -134,6 +134,53 @@ def test_follow_waits_for_a_complete_ndjson_line(tmp_path: Path) -> None:
     thread.join(timeout=1)
     assert store.latest("ABM")[0].metric["transport_sequence"] == 9
     assert store.stats()["invalid_records"] == 0
+
+
+def test_ingest_zmq_receives_validates_and_archives(tmp_path: Path) -> None:
+    zmq = pytest.importorskip("zmq")
+    store = MetricStore()
+    stop_event = threading.Event()
+    endpoint = "inproc://metrics-bridge-test"
+    archive_path = tmp_path / "archive.ndjson"
+
+    with archive_path.open("a", encoding="utf-8") as archive:
+        thread = threading.Thread(
+            target=ingest_zmq,
+            kwargs={
+                "endpoint": endpoint,
+                "store": store,
+                "stop_event": stop_event,
+                "poll_interval": 0.01,
+                "archive": archive,
+            },
+            daemon=True,
+        )
+        thread.start()
+
+        push = zmq.Context.instance().socket(zmq.PUSH)
+        push.connect(endpoint)
+        try:
+            serialized = json.dumps(metric(sequence=21))
+            push.send(serialized.encode("utf-8"))
+            push.send(b"not json")
+
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline:
+                stats = store.stats()
+                if stats["records_received"] == 1 and stats["invalid_records"] == 1:
+                    break
+                time.sleep(0.01)
+        finally:
+            push.close(linger=0)
+            stop_event.set()
+            thread.join(timeout=2)
+
+    assert store.latest("ABM")[0].metric["transport_sequence"] == 21
+    stats = store.stats()
+    assert stats["records_received"] == 1
+    assert stats["invalid_records"] == 1
+    assert stats["source_eof"] is True
+    assert archive_path.read_text(encoding="utf-8") == serialized + "\n"
 
 
 def test_reconnect_replays_only_events_after_last_event_id() -> None:

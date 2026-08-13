@@ -45,6 +45,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--ingress", default="tcp://127.0.0.1:5557")
     parser.add_argument("--egress", default="tcp://127.0.0.1:5558")
     parser.add_argument("--control", default="tcp://127.0.0.1:5559")
+    parser.add_argument(
+        "--metrics-ingress",
+        default="tcp://127.0.0.1:5560",
+        help="ZeroMQ endpoint carrying metric records from engine to bridge",
+    )
     parser.add_argument("--pacing-speed", type=float, default=1.0)
     parser.add_argument("--metrics-host", default="127.0.0.1")
     parser.add_argument("--metrics-port", type=int, default=8765)
@@ -228,6 +233,8 @@ def main() -> int:
         raise ValueError("--metrics-port must be between 1 and 65535")
     if args.metrics_history_size <= 0:
         raise ValueError("--metrics-history-size must be positive")
+    if "://" not in args.metrics_ingress:
+        raise ValueError("--metrics-ingress must be a ZeroMQ endpoint")
     ui_dir: Path | None = None if args.no_ui else args.ui_dir.resolve()
     if ui_dir is not None and not (ui_dir / "index.html").is_file():
         raise FileNotFoundError(f"metrics UI not found: {ui_dir}")
@@ -256,7 +263,6 @@ def main() -> int:
     pacing: subprocess.Popen[bytes] | None = None
     engine: subprocess.Popen[bytes] | None = None
     metrics_bridge: subprocess.Popen[bytes] | None = None
-    metrics_bridge_input: IO[bytes] | None = None
 
     print(f"Full-system run: {run_id}", flush=True)
     print(f"Artifacts: {run_dir}", flush=True)
@@ -268,7 +274,7 @@ def main() -> int:
                 "-m",
                 "metrics_bridge.cli",
                 "--input",
-                "-",
+                args.metrics_ingress,
                 "--archive",
                 str(run_dir / "metrics.ndjson"),
                 "--host",
@@ -281,13 +287,10 @@ def main() -> int:
             ],
             cwd=ROOT,
             env=environment,
-            stdin=subprocess.PIPE,
+            stdin=subprocess.DEVNULL,
             stdout=metrics_bridge_log,
             stderr=subprocess.STDOUT,
         )
-        metrics_bridge_input = metrics_bridge.stdin
-        if metrics_bridge_input is None:
-            raise RuntimeError("metrics bridge stdin pipe was not created")
         _wait_for_metrics_bridge(
             metrics_bridge,
             args.metrics_host,
@@ -329,14 +332,18 @@ def main() -> int:
         _wait_for_pacing(pacing, args.control, args.startup_timeout)
 
         engine = subprocess.Popen(
-            [str(engine_path), "--endpoint", args.egress],
+            [
+                str(engine_path),
+                "--endpoint",
+                args.egress,
+                "--metrics-endpoint",
+                args.metrics_ingress,
+            ],
             cwd=ROOT,
             env=environment,
-            stdout=metrics_bridge_input,
-            stderr=engine_log,
+            stdout=engine_log,
+            stderr=subprocess.STDOUT,
         )
-        metrics_bridge_input.close()
-        metrics_bridge_input = None
         time.sleep(0.25)
         if engine.poll() is not None:
             raise RuntimeError(
@@ -417,8 +424,6 @@ def main() -> int:
                 pass
         return 0
     finally:
-        if metrics_bridge_input is not None:
-            metrics_bridge_input.close()
         _stop_process(engine)
         _stop_process(metrics_bridge)
         if pacing is not None and pacing.poll() is None:

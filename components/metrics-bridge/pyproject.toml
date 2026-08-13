@@ -8,6 +8,9 @@ version = "0.1.0"
 description = "Browser-facing HTTP and SSE bridge for calculation-engine metric snapshots"
 requires-python = ">=3.11"
 
+[project.optional-dependencies]
+zmq = ["pyzmq>=25"]
+
 [project.scripts]
 liquidity-metrics-bridge = "metrics_bridge.cli:main"
 

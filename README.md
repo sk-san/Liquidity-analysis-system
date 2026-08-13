@@ -63,5 +63,8 @@ make run-calculation-engine
 ```
 
 By default it connects to the pacing server at `tcp://127.0.0.1:5558` and
-writes synchronized metric snapshots as newline-delimited JSON. Override the
+writes synchronized metric snapshots as newline-delimited JSON to stdout;
+with `--metrics-endpoint` it publishes them over ZeroMQ PUSH instead, which
+is how `make run` connects it to the metrics bridge (endpoint variable
+`METRICS_INGRESS`, default `tcp://127.0.0.1:5560`). Override the pacing
 endpoint with `CALCULATION_ENGINE_EGRESS`.

@@ -18,7 +18,8 @@ CalculationEngine
   +-- MarketMetricsCalculator
   +-- latest immutable metric snapshot
         |
-        | NDJSON metric records over stdout
+        | JSON metric records over ZeroMQ PUSH
+        | (NDJSON on stdout without --metrics-endpoint)
         v
 Metrics bridge
   +-- latest-metric HTTP endpoint
@@ -57,6 +58,8 @@ Metrics UI (browser)
 
 ### Metrics bridge
 
+- Ingests metric records from a ZeroMQ PULL endpoint it binds (the full-system
+  default), from stdin, or from an NDJSON file it follows.
 - Validates calculation-engine metric records against the `metrics.ndjson` shape.
 - Retains the latest metric per symbol and a bounded reconnect history.
 - Delivers metrics to browsers through HTTP and Server-Sent Events.

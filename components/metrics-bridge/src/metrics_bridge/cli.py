@@ -8,7 +8,7 @@ import threading
 from pathlib import Path
 from typing import TextIO
 
-from .ingest import ingest_path, ingest_stream
+from .ingest import ingest_path, ingest_stream, ingest_zmq, is_zmq_endpoint
 from .server import MetricsBridgeServer
 from .store import MetricStore
 
@@ -20,7 +20,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--input",
         default="-",
-        help="NDJSON input path, or - for calculation-engine stdout piped to stdin",
+        help=(
+            "NDJSON input path, - for calculation-engine stdout piped to "
+            "stdin, or a ZeroMQ PULL endpoint to bind "
+            "(tcp://, ipc://, inproc://; requires pyzmq)"
+        ),
     )
     parser.add_argument(
         "--follow",
@@ -58,13 +62,29 @@ def _start_ingestion(
     stop_event: threading.Event,
 ) -> tuple[threading.Thread, TextIO | None]:
     archive: TextIO | None = None
-    if args.archive is not None and args.input != "-":
-        raise ValueError("--archive is only supported with --input -")
+    if args.archive is not None and not (
+        args.input == "-" or is_zmq_endpoint(args.input)
+    ):
+        raise ValueError(
+            "--archive is only supported with --input - or a ZeroMQ endpoint"
+        )
     if args.archive is not None:
         args.archive.parent.mkdir(parents=True, exist_ok=True)
         archive = args.archive.open("a", encoding="utf-8")
 
-    if args.input == "-":
+    if is_zmq_endpoint(args.input):
+        thread = threading.Thread(
+            target=ingest_zmq,
+            kwargs={
+                "endpoint": args.input,
+                "store": store,
+                "stop_event": stop_event,
+                "archive": archive,
+            },
+            name="metrics-ingestion",
+            daemon=True,
+        )
+    elif args.input == "-":
         thread = threading.Thread(
             target=ingest_stream,
             kwargs={
