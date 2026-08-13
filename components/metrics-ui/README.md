@@ -27,8 +27,8 @@ parameter: `index.html?bridge=http://host:port`.
   for this pair.
 - **Instrument bar** — midprice, quoted spread, microprice, best bid/ask with
   size, top-of-book imbalance, traded volume.
-- **Strip charts on one shared time axis** — MM share of visible depth, price
-  with trade prints, imbalance, and visible depth. Hovering or focusing the
+- **Strip charts on one shared time axis** — MM liquidity provision ratio,
+  price with trade prints, imbalance, and visible depth. Hovering or focusing the
   charts moves one crosshair across all channels and pins each channel's
   readout to that record; arrow keys step record by record.
 - **Table view** — the most recent records as numbers, the accessible twin of

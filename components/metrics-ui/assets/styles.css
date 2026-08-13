@@ -379,6 +379,10 @@ select {
   background: var(--k, var(--muted));
 }
 
+.hero-signal h2 {
+  white-space: normal;
+}
+
 .hero-signal .signal-row {
   display: grid;
   grid-template-columns: 32px 76px 1fr;

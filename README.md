@@ -22,8 +22,9 @@ http://127.0.0.1:8765/api/v1/metrics/latest
 http://127.0.0.1:8765/api/v1/metrics/stream
 ```
 
-The UI in `components/metrics-ui` plots price, market-maker share of visible
-depth, top-of-book imbalance, and visible depth as live strip charts, and
+The UI in `components/metrics-ui` plots price, the market-maker liquidity
+provision ratio, top-of-book imbalance, and visible depth as live strip
+charts, and
 surfaces sync loss, stream gaps, and reconnects instead of hiding them. The
 stream uses browser-native Server-Sent Events. See
 `components/metrics-bridge/README.md` for filtering, replay, CORS, and
