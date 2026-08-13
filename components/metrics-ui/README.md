@@ -20,13 +20,17 @@ parameter: `index.html?bridge=http://host:port`.
 
 ## What it shows
 
+- **The headline: market-maker liquidity provision.** The bid and ask
+  liquidity-provision ratios lead the page — a hero tile with both values and
+  fill tracks, and the top, tallest strip chart (tagged *primary research
+  signal*) with a live end-marker on each line. Everything else is context
+  for this pair.
 - **Instrument bar** — midprice, quoted spread, microprice, best bid/ask with
-  size, market-maker share of visible depth (the research signal), top-of-book
-  imbalance, traded volume.
-- **Strip charts on one shared time axis** — price with trade prints,
-  market-maker share of visible depth, imbalance, and visible depth. Hovering
-  or focusing the charts moves one crosshair across all channels and pins each
-  channel's readout to that record; arrow keys step record by record.
+  size, top-of-book imbalance, traded volume.
+- **Strip charts on one shared time axis** — MM share of visible depth, price
+  with trade prints, imbalance, and visible depth. Hovering or focusing the
+  charts moves one crosshair across all channels and pins each channel's
+  readout to that record; arrow keys step record by record.
 - **Table view** — the most recent records as numbers, the accessible twin of
   the charts.
 - **Event feed and banners** — connects, reconnects, replay-window resets,

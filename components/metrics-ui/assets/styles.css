@@ -379,34 +379,52 @@ select {
   background: var(--k, var(--muted));
 }
 
-.meter {
+.hero-signal .signal-row {
   display: grid;
-  grid-template-columns: 34px 1fr 44px;
+  grid-template-columns: 32px 76px 1fr;
   align-items: center;
-  gap: 7px;
-  margin-top: 5px;
-  font-size: 11.5px;
-  color: var(--ink-2);
+  gap: 8px;
+  margin-top: 6px;
 }
 
-.meter .track {
-  height: 4px;
-  border-radius: 2px;
+.signal-label {
+  font-size: 11.5px;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.signal-value {
+  font-size: 23px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.track {
+  height: 5px;
+  border-radius: 2.5px;
   background: color-mix(in srgb, var(--k) 16%, var(--surface));
   overflow: hidden;
 }
 
-.meter .fill {
+.track .fill {
+  display: block;
   height: 100%;
   width: 0%;
-  border-radius: 2px;
+  border-radius: 2.5px;
   background: var(--k);
 }
 
-.meter .num {
-  text-align: right;
-  color: var(--ink);
-  font-weight: 600;
+.signal-note {
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  padding: 1px 8px;
+  white-space: nowrap;
 }
 
 .imb-scale {

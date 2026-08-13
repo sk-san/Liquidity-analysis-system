@@ -58,23 +58,24 @@
   });
 
   const charts = [
+    // The headline channel: market-maker liquidity provision, bid and ask.
+    new StripChart($("c-lpr"), {
+      height: 232,
+      yDomain: [0, 1],
+      yTicks: [0, 0.25, 0.5, 0.75, 1],
+      yFormat: (v) => `${Math.round(v * 100)}%`,
+      series: [
+        { type: "line", key: "lprBid", color: "bid", endDot: true },
+        { type: "line", key: "lprAsk", color: "ask", endDot: true },
+      ],
+    }),
     new StripChart($("c-price"), {
-      height: 228,
+      height: 200,
       yDomain: "auto",
       yFormat: (v) => pricePlain.format(v / 100),
       series: [
         { type: "dots", key: "lastPx", changedKey: "trades", color: "trade" },
         { type: "line", key: "mid", color: "price" },
-      ],
-    }),
-    new StripChart($("c-lpr"), {
-      height: 172,
-      yDomain: [0, 1],
-      yTicks: [0, 0.25, 0.5, 0.75, 1],
-      yFormat: (v) => `${Math.round(v * 100)}%`,
-      series: [
-        { type: "line", key: "lprBid", color: "bid" },
-        { type: "line", key: "lprAsk", color: "ask" },
       ],
     }),
     new StripChart($("c-imb"), {
@@ -248,13 +249,12 @@
     line.append(sync);
   }
 
-  function meterFill(id, ratio) {
-    const meter = $(id);
-    meter.querySelector(".fill").style.width =
+  function signalFill(valueId, fillId, ratio) {
+    $(valueId).textContent = fmt.pct(ratio);
+    $(fillId).style.width =
       ratio === null || ratio === undefined
         ? "0%"
         : `${Math.min(Math.max(ratio, 0), 1) * 100}%`;
-    meter.querySelector(".num").textContent = fmt.pct(ratio);
   }
 
   function renderTiles(latest) {
@@ -272,8 +272,8 @@
       latest && latest.askQ !== null
         ? `${fmt.qty(latest.askQ)} shares at best`
         : "—";
-    meterFill("m-bid", latest ? latest.lprBid : null);
-    meterFill("m-ask", latest ? latest.lprAsk : null);
+    signalFill("t-lpr-bid", "f-bid", latest ? latest.lprBid : null);
+    signalFill("t-lpr-ask", "f-ask", latest ? latest.lprAsk : null);
     $("t-imb").textContent = latest ? fmt.signed(latest.imb) : "—";
     const imb = latest ? latest.imb : null;
     $("t-imb-sub").textContent =

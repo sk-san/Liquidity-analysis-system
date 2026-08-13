@@ -43,7 +43,20 @@
   </section>
 
   <section class="tiles" aria-label="Latest metrics">
-    <article class="tile hero">
+    <article class="tile hero-signal">
+      <h2>MM share of visible depth</h2>
+      <div class="signal-row" style="--k: var(--series-bid)">
+        <span class="signal-label"><span class="key"></span>Bid</span>
+        <b class="signal-value" id="t-lpr-bid">—</b>
+        <span class="track"><span class="fill" id="f-bid"></span></span>
+      </div>
+      <div class="signal-row" style="--k: var(--series-ask)">
+        <span class="signal-label"><span class="key"></span>Ask</span>
+        <b class="signal-value" id="t-lpr-ask">—</b>
+        <span class="track"><span class="fill" id="f-ask"></span></span>
+      </div>
+    </article>
+    <article class="tile">
       <h2>Midprice</h2>
       <div class="value" id="t-mid">—</div>
       <div class="sub" id="t-mid-sub">waiting for data</div>
@@ -57,19 +70,6 @@
       <h2><span class="key" style="--k: var(--series-ask)"></span>Best ask</h2>
       <div class="value" id="t-ask">—</div>
       <div class="sub" id="t-ask-sub">—</div>
-    </article>
-    <article class="tile">
-      <h2>MM share of depth</h2>
-      <div class="meter" id="m-bid" style="--k: var(--series-bid)">
-        <span>Bid</span>
-        <span class="track"><span class="fill"></span></span>
-        <span class="num">—</span>
-      </div>
-      <div class="meter" id="m-ask" style="--k: var(--series-ask)">
-        <span>Ask</span>
-        <span class="track"><span class="fill"></span></span>
-        <span class="num">—</span>
-      </div>
     </article>
     <article class="tile">
       <h2>Imbalance</h2>
@@ -92,6 +92,17 @@
   >
     <section class="channel">
       <header>
+        <h2>Market-maker share of visible depth</h2>
+        <span class="signal-note">primary research signal</span>
+        <div class="readout">
+          <span><span class="key" style="--k: var(--series-bid)"></span>Bid <b id="ro-lpr-bid">—</b></span>
+          <span><span class="key" style="--k: var(--series-ask)"></span>Ask <b id="ro-lpr-ask">—</b></span>
+        </div>
+      </header>
+      <canvas id="c-lpr" aria-hidden="true"></canvas>
+    </section>
+    <section class="channel">
+      <header>
         <h2>Price</h2>
         <div class="readout">
           <span><span class="key" style="--k: var(--series-price)"></span>Mid <b id="ro-mid">—</b></span>
@@ -100,16 +111,6 @@
         </div>
       </header>
       <canvas id="c-price" aria-hidden="true"></canvas>
-    </section>
-    <section class="channel">
-      <header>
-        <h2>Market-maker share of visible depth</h2>
-        <div class="readout">
-          <span><span class="key" style="--k: var(--series-bid)"></span>Bid <b id="ro-lpr-bid">—</b></span>
-          <span><span class="key" style="--k: var(--series-ask)"></span>Ask <b id="ro-lpr-ask">—</b></span>
-        </div>
-      </header>
-      <canvas id="c-lpr" aria-hidden="true"></canvas>
     </section>
     <section class="channel">
       <header>

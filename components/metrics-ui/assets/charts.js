@@ -329,6 +329,17 @@ MetricsUI.charts = (() => {
         }
         ctx.globalAlpha = 1;
       }
+      if (series.endDot && runs.length) {
+        const lastRun = runs[runs.length - 1];
+        const [x, v] = lastRun[lastRun.length - 1];
+        ctx.beginPath();
+        ctx.arc(x, yOf(v), 4, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = frame.theme.surface;
+        ctx.stroke();
+      }
     }
 
     // Signed series: the positive lobe wears one entity color, the negative
