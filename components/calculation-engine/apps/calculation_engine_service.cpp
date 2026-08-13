@@ -33,6 +33,7 @@ void handle_signal(int signal_number) {
 
 struct Options {
     std::string endpoint{"tcp://127.0.0.1:5558"};
+    std::string metrics_endpoint{};
     int receive_hwm{100'000};
     int linger_ms{0};
     std::size_t maximum_frame_bytes{64U * 1024U * 1024U};
@@ -67,6 +68,10 @@ void print_usage(const char* program) {
         << "Options:\n"
         << "  --endpoint ENDPOINT       ZeroMQ PULL endpoint to connect to\n"
         << "                            (default tcp://127.0.0.1:5558)\n"
+        << "  --metrics-endpoint ENDPOINT\n"
+        << "                            ZeroMQ PUSH endpoint to connect for metric\n"
+        << "                            records, one JSON record per message\n"
+        << "                            (default: write NDJSON to stdout)\n"
         << "  --receive-hwm COUNT       ZeroMQ receive high-water mark\n"
         << "  --linger-ms MILLISECONDS  Socket close linger period\n"
         << "  --max-frame-bytes BYTES   Maximum wire and decompressed frame size\n"
@@ -91,6 +96,11 @@ Options parse_options(int argc, char** argv) {
             options.endpoint = value;
             if (options.endpoint.empty()) {
                 usage_error("--endpoint must not be empty");
+            }
+        } else if (argument == "--metrics-endpoint") {
+            options.metrics_endpoint = value;
+            if (options.metrics_endpoint.empty()) {
+                usage_error("--metrics-endpoint must not be empty");
             }
         } else if (argument == "--receive-hwm") {
             options.receive_hwm = parse_integer<int>(value, argument);
@@ -183,50 +193,51 @@ void write_optional(std::ostream& output, const std::optional<Value>& value) {
     }
 }
 
-void write_metrics(
+std::string format_metrics(
     const ce::transport::DecodedEnvelope& envelope,
     const ce::indicators::MarketMetrics& metrics,
     ce::market_data::TimestampNs received_wall_time_ns) {
-    std::cout << std::setprecision(std::numeric_limits<double>::max_digits10)
-              << '{'
-              << "\"run_id\":" << json_string(envelope.run_id)
-              << ",\"transport_sequence\":" << envelope.transport_sequence
-              << ",\"symbol\":" << json_string(metrics.symbol)
-              << ",\"sequence\":" << metrics.sequence
-              << ",\"exchange_time_ns\":" << metrics.exchange_time_ns
-              << ",\"received_wall_time_ns\":" << received_wall_time_ns
-              << ",\"synchronized\":"
-              << (metrics.synchronized ? "true" : "false")
-              << ",\"order_count\":" << metrics.order_count
-              << ",\"best_bid_price\":";
-    write_optional(std::cout, metrics.best_bid_price);
-    std::cout << ",\"best_bid_quantity\":";
-    write_optional(std::cout, metrics.best_bid_quantity);
-    std::cout << ",\"best_ask_price\":";
-    write_optional(std::cout, metrics.best_ask_price);
-    std::cout << ",\"best_ask_quantity\":";
-    write_optional(std::cout, metrics.best_ask_quantity);
-    std::cout << ",\"quoted_spread\":";
-    write_optional(std::cout, metrics.quoted_spread);
-    std::cout << ",\"midprice\":";
-    write_optional(std::cout, metrics.midprice);
-    std::cout << ",\"microprice\":";
-    write_optional(std::cout, metrics.microprice);
-    std::cout << ",\"top_of_book_imbalance\":";
-    write_optional(std::cout, metrics.top_of_book_imbalance);
-    std::cout << ",\"bid_visible_depth\":" << metrics.bid_visible_depth
-              << ",\"ask_visible_depth\":" << metrics.ask_visible_depth
-              << ",\"trade_count\":" << metrics.trade_count
-              << ",\"traded_volume\":" << metrics.traded_volume
-              << ",\"last_trade_price\":";
-    write_optional(std::cout, metrics.last_trade_price);
-    std::cout<< ",\"bid_liquidity_provision_ratio\":";
-    write_optional(std::cout, metrics.bid_liquidity_provision_ratio);
-    std::cout<< ",\"ask_liquidity_provision_ratio\":";
-    write_optional(std::cout, metrics.ask_liquidity_provision_ratio);
-    std::cout << ",\"visible_checksum\":" << metrics.visible_checksum
-              << "}\n";
-    std::cout.flush();
+    std::ostringstream output;
+    output << std::setprecision(std::numeric_limits<double>::max_digits10)
+           << '{'
+           << "\"run_id\":" << json_string(envelope.run_id)
+           << ",\"transport_sequence\":" << envelope.transport_sequence
+           << ",\"symbol\":" << json_string(metrics.symbol)
+           << ",\"sequence\":" << metrics.sequence
+           << ",\"exchange_time_ns\":" << metrics.exchange_time_ns
+           << ",\"received_wall_time_ns\":" << received_wall_time_ns
+           << ",\"synchronized\":"
+           << (metrics.synchronized ? "true" : "false")
+           << ",\"order_count\":" << metrics.order_count
+           << ",\"best_bid_price\":";
+    write_optional(output, metrics.best_bid_price);
+    output << ",\"best_bid_quantity\":";
+    write_optional(output, metrics.best_bid_quantity);
+    output << ",\"best_ask_price\":";
+    write_optional(output, metrics.best_ask_price);
+    output << ",\"best_ask_quantity\":";
+    write_optional(output, metrics.best_ask_quantity);
+    output << ",\"quoted_spread\":";
+    write_optional(output, metrics.quoted_spread);
+    output << ",\"midprice\":";
+    write_optional(output, metrics.midprice);
+    output << ",\"microprice\":";
+    write_optional(output, metrics.microprice);
+    output << ",\"top_of_book_imbalance\":";
+    write_optional(output, metrics.top_of_book_imbalance);
+    output << ",\"bid_visible_depth\":" << metrics.bid_visible_depth
+           << ",\"ask_visible_depth\":" << metrics.ask_visible_depth
+           << ",\"trade_count\":" << metrics.trade_count
+           << ",\"traded_volume\":" << metrics.traded_volume
+           << ",\"last_trade_price\":";
+    write_optional(output, metrics.last_trade_price);
+    output << ",\"bid_liquidity_provision_ratio\":";
+    write_optional(output, metrics.bid_liquidity_provision_ratio);
+    output << ",\"ask_liquidity_provision_ratio\":";
+    write_optional(output, metrics.ask_liquidity_provision_ratio);
+    output << ",\"visible_checksum\":" << metrics.visible_checksum
+           << '}';
+    return output.str();
 }
 
 const char* apply_code_name(ce::order_book::ApplyCode code) {
@@ -324,6 +335,75 @@ private:
     zmq_msg_t value_{};
 };
 
+// Emits one JSON metric record per line on stdout, or per ZeroMQ message on
+// the configured PUSH endpoint. Sending never blocks the event loop for more
+// than the send timeout: records the consumer cannot absorb are dropped and
+// counted rather than stalling the market-data path.
+class MetricsPublisher {
+public:
+    MetricsPublisher() = default;
+
+    MetricsPublisher(void* context, const std::string& endpoint)
+        : socket_(std::make_unique<ZmqSocket>(context, ZMQ_PUSH)) {
+        constexpr int send_hwm = 100'000;
+        constexpr int send_timeout_ms = 1'000;
+        // A bounded positive linger lets queued tail records flush to the
+        // bridge on shutdown instead of being dropped with the socket.
+        constexpr int linger_ms = 2'000;
+        if (zmq_setsockopt(
+                socket_->get(), ZMQ_SNDHWM, &send_hwm, sizeof(send_hwm)) != 0) {
+            throw_zmq_error("setting ZMQ_SNDHWM");
+        }
+        if (zmq_setsockopt(
+                socket_->get(),
+                ZMQ_SNDTIMEO,
+                &send_timeout_ms,
+                sizeof(send_timeout_ms)) != 0) {
+            throw_zmq_error("setting ZMQ_SNDTIMEO");
+        }
+        if (zmq_setsockopt(
+                socket_->get(), ZMQ_LINGER, &linger_ms, sizeof(linger_ms)) != 0) {
+            throw_zmq_error("setting ZMQ_LINGER");
+        }
+        if (zmq_connect(socket_->get(), endpoint.c_str()) != 0) {
+            throw_zmq_error("connecting metrics PUSH socket");
+        }
+    }
+
+    void publish(const std::string& record) {
+        if (socket_ == nullptr) {
+            std::cout << record << '\n';
+            std::cout.flush();
+            return;
+        }
+        while (true) {
+            if (zmq_send(socket_->get(), record.data(), record.size(), 0) >= 0) {
+                return;
+            }
+            if (zmq_errno() == EINTR) {
+                continue;
+            }
+            if (zmq_errno() == EAGAIN) {
+                ++dropped_records_;
+                if (dropped_records_ == 1 || dropped_records_ % 1'000 == 0) {
+                    std::cerr << "metrics consumer is not keeping up; dropped "
+                              << dropped_records_ << " metric records so far\n";
+                }
+                return;
+            }
+            throw_zmq_error("sending metric record");
+        }
+    }
+
+    [[nodiscard]] std::uint64_t dropped_records() const noexcept {
+        return dropped_records_;
+    }
+
+private:
+    std::unique_ptr<ZmqSocket> socket_;
+    std::uint64_t dropped_records_ = 0;
+};
+
 int run(const Options& options) {
     std::signal(SIGINT, handle_signal);
     std::signal(SIGTERM, handle_signal);
@@ -348,7 +428,16 @@ int run(const Options& options) {
         throw_zmq_error("connecting PULL socket");
     }
 
+    MetricsPublisher publisher =
+        options.metrics_endpoint.empty()
+            ? MetricsPublisher{}
+            : MetricsPublisher{context.get(), options.metrics_endpoint};
+
     std::cerr << "calculation engine connected to " << options.endpoint << '\n';
+    if (!options.metrics_endpoint.empty()) {
+        std::cerr << "metric records to ZeroMQ PUSH "
+                  << options.metrics_endpoint << '\n';
+    }
 
     auto engine = std::make_unique<ce::engine::CalculationEngine>(
         ce::engine::EngineConfig{
@@ -439,10 +528,10 @@ int run(const Options& options) {
                     } else if (
                         apply_result.metrics.has_value() &&
                         apply_result.metrics->synchronized) {
-                        write_metrics(
+                        publisher.publish(format_metrics(
                             envelope,
                             *apply_result.metrics,
-                            received_at);
+                            received_at));
                     }
                 }
             }
@@ -455,6 +544,10 @@ int run(const Options& options) {
             decoded_envelopes >= options.maximum_messages) {
             break;
         }
+    }
+    if (publisher.dropped_records() != 0) {
+        std::cerr << "dropped " << publisher.dropped_records()
+                  << " metric records the consumer did not absorb\n";
     }
     return 0;
 }

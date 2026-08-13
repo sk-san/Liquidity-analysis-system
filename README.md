@@ -13,16 +13,35 @@ scenario, waits for all market-data messages to drain, and then shuts the
 services down. Each run writes metrics and component logs below
 `state/full-system/<run-id>/`.
 
-While a run is active, calculated metrics are available at:
+While a run is active, the browser dashboard and the underlying endpoints are
+available at:
 
 ```text
+http://127.0.0.1:8765/                      (live metrics UI)
 http://127.0.0.1:8765/api/v1/metrics/latest
 http://127.0.0.1:8765/api/v1/metrics/stream
 ```
 
-The stream uses browser-native Server-Sent Events. No UI is included. See
-`components/metrics-bridge/README.md` for filtering, replay, CORS, and standalone
-usage.
+The UI in `components/metrics-ui` plots price, the market-maker liquidity
+provision ratio, top-of-book imbalance, and visible depth as live strip
+charts, and
+surfaces sync loss, stream gaps, and reconnects instead of hiding them. The
+stream uses browser-native Server-Sent Events. See
+`components/metrics-bridge/README.md` for filtering, replay, CORS, and
+standalone usage.
+
+The run script stops all services once the pipeline drains. Keep the bridge and
+UI up for browsing afterwards with:
+
+```bash
+make run METRICS_HOLD=1
+```
+
+Browse an archived run again later without ABIDES:
+
+```bash
+make run-metrics-bridge METRICS_INPUT=state/full-system/<run-id>/metrics.ndjson
+```
 
 For a short smoke run or a different scenario:
 
@@ -44,5 +63,8 @@ make run-calculation-engine
 ```
 
 By default it connects to the pacing server at `tcp://127.0.0.1:5558` and
-writes synchronized metric snapshots as newline-delimited JSON. Override the
+writes synchronized metric snapshots as newline-delimited JSON to stdout;
+with `--metrics-endpoint` it publishes them over ZeroMQ PUSH instead, which
+is how `make run` connects it to the metrics bridge (endpoint variable
+`METRICS_INGRESS`, default `tcp://127.0.0.1:5560`). Override the pacing
 endpoint with `CALCULATION_ENGINE_EGRESS`.

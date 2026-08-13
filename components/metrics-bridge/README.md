@@ -2,12 +2,30 @@
 
 The metrics bridge validates the calculation engine's newline-delimited JSON
 output and makes it available to a browser over HTTP and Server-Sent Events
-(SSE). It has no UI and no third-party runtime dependencies.
+(SSE). It has no third-party runtime dependencies. Passing `--ui-dir <path>`
+additionally serves a static browser UI (such as `components/metrics-ui`) at
+`/`; without the flag the bridge stays API-only.
 
 ## Live input
 
-Pipe the calculation engine's standard output to the bridge while preserving a
-persistent NDJSON copy:
+Receive metric records over ZeroMQ — the bridge binds a PULL socket and the
+calculation engine connects to it with `--metrics-endpoint` (this is what
+`make run` wires up, and it needs the optional `pyzmq` dependency:
+`pip install 'liquidity-metrics-bridge[zmq]'`):
+
+```bash
+liquidity-metrics-bridge \
+  --input tcp://127.0.0.1:5560 \
+  --archive state/metrics.ndjson \
+  --host 127.0.0.1 \
+  --port 8765
+
+calculation_engine_service --endpoint tcp://127.0.0.1:5558 \
+  --metrics-endpoint tcp://127.0.0.1:5560
+```
+
+Each ZeroMQ message carries one JSON metric record. Without pyzmq the bridge
+still supports its pipe mode — the calculation engine's stdout piped to stdin:
 
 ```bash
 calculation_engine_service --endpoint tcp://127.0.0.1:5558 \
@@ -18,8 +36,7 @@ calculation_engine_service --endpoint tcp://127.0.0.1:5558 \
       --port 8765
 ```
 
-The repository's `make run` command starts the bridge automatically. The bridge
-can also follow an engine output file that is still growing:
+The bridge can also follow an engine output file that is still growing:
 
 ```bash
 liquidity-metrics-bridge \
@@ -29,6 +46,8 @@ liquidity-metrics-bridge \
 
 ## Browser API
 
+- `GET /` — the static UI, when `--ui-dir` is set (API routes keep precedence;
+  file paths are resolved strictly inside the UI directory).
 - `GET /healthz` — ingestion and connection counters.
 - `GET /api/v1/metrics/schema` — JSON Schema for metric records.
 - `GET /api/v1/metrics/latest` — latest record for every symbol.

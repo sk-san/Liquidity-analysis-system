@@ -96,14 +96,19 @@ ctest --preset sanitized
 `calculation_engine_service` is the transport adapter between the pacing
 server and `CalculationEngine`. It connects a ZeroMQ `PULL` socket to the
 pacing server's `PUSH` egress, validates and decodes canonical `MDP1`
-MessagePack frames, applies market events in order, and writes synchronized
-metric snapshots as newline-delimited JSON to standard output.
+MessagePack frames, applies market events in order, and emits synchronized
+metric snapshots as JSON — newline-delimited on standard output by default,
+or one record per ZeroMQ message when `--metrics-endpoint` names a `PUSH`
+endpoint to connect (the metrics bridge binds the matching `PULL` side).
+Metric sending never blocks the market-data path: records a stalled consumer
+cannot absorb within the send timeout are dropped and counted on stderr.
 
 Start it before or after the pacing server:
 
 ```bash
 ./build/release/calculation_engine_service \
-  --endpoint tcp://127.0.0.1:5558
+  --endpoint tcp://127.0.0.1:5558 \
+  --metrics-endpoint tcp://127.0.0.1:5560
 ```
 
 Diagnostics and rejected/desynchronized events are written to standard error.
