@@ -10,6 +10,35 @@ MetricsUI.stream = (() => {
 
   const SERIES_CAP = 60000;
   const TRIM_CHUNK = 5000;
+  const BOOK_DEPTH = 10;
+
+  function normalizeBookLevels(levels) {
+    if (!Array.isArray(levels)) return null;
+    const normalized = [];
+    for (const level of levels.slice(0, BOOK_DEPTH)) {
+      if (
+        !level ||
+        !Number.isInteger(level.price) ||
+        level.price < 0 ||
+        !Number.isInteger(level.visible_quantity) ||
+        level.visible_quantity < 0 ||
+        !Number.isInteger(level.visible_mm_quantity) ||
+        level.visible_mm_quantity < 0 ||
+        level.visible_mm_quantity > level.visible_quantity
+      ) {
+        return null;
+      }
+      normalized.push({
+        price: level.price,
+        qty: level.visible_quantity,
+        mmQty: level.visible_mm_quantity,
+        orderCount: Number.isInteger(level.visible_order_count)
+          ? level.visible_order_count
+          : null,
+      });
+    }
+    return normalized;
+  }
 
   class SymbolSeries {
     constructor(symbol) {
@@ -17,6 +46,10 @@ MetricsUI.stream = (() => {
       this.points = [];
       this.lastSeq = 0;
       this.pendingBreak = false;
+      // Only the current L2 snapshot is retained. Keeping twenty level objects
+      // on every one of 60k chart points would multiply browser memory for no
+      // benefit; Pause captures a separate immutable reference in app.js.
+      this.book = null;
     }
 
     push(record) {
@@ -25,8 +58,22 @@ MetricsUI.stream = (() => {
       }
       this.lastSeq = record.transport_sequence;
       const exactNs = record.exchange_time_ns_exact;
+      const t =
+        exactNs !== undefined ? nsToMs(exactNs) : record.exchange_time_ns / 1e6;
+      const bids = normalizeBookLevels(record.bid_levels);
+      const asks = normalizeBookLevels(record.ask_levels);
+      this.book =
+        bids !== null && asks !== null
+          ? {
+              bids,
+              asks,
+              seq: record.transport_sequence,
+              t,
+              sync: record.synchronized,
+            }
+          : null;
       this.points.push({
-        t: exactNs !== undefined ? nsToMs(exactNs) : record.exchange_time_ns / 1e6,
+        t,
         tNs: exactNs,
         seq: record.transport_sequence,
         mid: record.midprice,
@@ -194,5 +241,5 @@ MetricsUI.stream = (() => {
     return "http://127.0.0.1:8765";
   }
 
-  return { MetricsFeed, resolveBaseUrl };
+  return { MetricsFeed, SymbolSeries, normalizeBookLevels, resolveBaseUrl };
 })();

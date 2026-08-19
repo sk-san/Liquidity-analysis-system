@@ -7,8 +7,16 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace calculation_engine::indicators {
+
+struct BookLevel {
+    market_data::Price price{};
+    market_data::Quantity visible_quantity{};
+    market_data::Quantity visible_mm_quantity{};
+    std::size_t visible_order_count{};
+};
 
 struct MarketMetrics {
     std::string symbol;
@@ -29,6 +37,8 @@ struct MarketMetrics {
 
     market_data::Quantity bid_visible_depth{};
     market_data::Quantity ask_visible_depth{};
+    std::vector<BookLevel> bid_levels;
+    std::vector<BookLevel> ask_levels;
 
     std::uint64_t trade_count{};
     market_data::Quantity traded_volume{};

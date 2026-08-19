@@ -26,10 +26,10 @@ Metrics bridge
   +-- browser-native SSE stream
   +-- static metrics-UI hosting
         |
-        | SSE metric events
+        | SSE metric events carrying atomic metric + L2 snapshots
         v
 Metrics UI (browser)
-  +-- instrument tiles and strip charts
+  +-- live top-10 L2 order book, instrument tiles and strip charts
   +-- gap / reset / desync surfacing
 ```
 
@@ -68,12 +68,17 @@ Metrics UI (browser)
 
 ### Metrics UI
 
-- Renders the stream in the browser: instrument tiles, shared-axis strip
-  charts, and a table view, with no third-party dependencies.
+- Renders the stream in the browser: an atomic top-10 L2 order-book ladder,
+  instrument tiles, shared-axis strip charts, and a table view, with no
+  third-party dependencies.
+- Replaces each symbol's ladder from the `bid_levels` and `ask_levels` carried
+  together in one metric SSE event; it never combines levels across events or
+  symbols. Missing arrays remain valid for legacy aggregate-only recordings.
 - Deduplicates reconnect replays by `transport_sequence` and resets on a new
   `run_id`.
 - Draws reported gaps as breaks in the data and keeps desynchronized records
-  visibly flagged as diagnostics.
+  visibly flagged as diagnostics; the ladder is frozen with the rest of the
+  display on Pause and marked stale while the shadow book is desynchronized.
 
 ## Threading model
 
