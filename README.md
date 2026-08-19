@@ -8,6 +8,38 @@ simulated market where the answer is knowable, wired to a real-time pipeline
 that computes the proxies and the ground truth side by side, from the same book,
 at the same instant.
 
+## Demo
+
+An `rmsc04` run streaming live into the dashboard — simulation clock 09:33 to
+09:38, paced onto wall time, every metric computed from the book as it moves:
+
+https://github.com/user-attachments/assets/4af9f9dd-e6b5-4e5c-8dee-39408138c2b1
+
+What the clip is showing, from the top:
+
+- **The ground truth, as two numbers.** Bid and ask liquidity provision ratio —
+  the share of visible quantity-time posted by market-maker agents. Opening
+  frame: **bid 100.0%, ask 2.9%**. Market makers are the *entire* visible bid
+  and almost none of the offer.
+- **The proxies, at the same instant.** Midprice $999.655, spread 1¢,
+  top-of-book imbalance **−0.74** — "ask-heavy". An analyst with real market
+  data reads a book leaning hard to the offer. The ground truth says the lean is
+  *because* the market makers are all on one side. The proxy sees the shape; it
+  cannot see the author. That gap, quantified, is the research question.
+- **The order book, with the label attached.** The L2 ladder carries an `MM`
+  column per price level, next to size — `26 / 26` down the whole bid, `0` on
+  the offer. This is what no real feed can print, and it is where the headline
+  number comes from.
+- **Both families on one time axis.** The liquidity provision ratio (tagged
+  *primary research signal*), then price with trade prints, imbalance, and
+  visible depth — same axis, same records, so the guesses and the thing being
+  guessed at can be read against each other directly. Watch the two ratio lines
+  converge and cross midway through the clip — bid 24.6% against ask 25.0% — as
+  market-maker share of the two sides evens out.
+
+Bid series are blue and ask series orange in every channel. Hovering the charts
+moves one crosshair across all of them; arrow keys step record by record.
+
 ---
 
 ## Background — why the question is open
@@ -133,10 +165,8 @@ http://127.0.0.1:8765/api/v1/metrics/latest
 http://127.0.0.1:8765/api/v1/metrics/stream (SSE)
 ```
 
-The dashboard leads with the bid and ask liquidity provision ratios — the
-ground truth — and plots price, top-of-book imbalance, and visible depth beneath
-them on a shared time axis, so the proxies and the thing they are proxying for
-can be read against each other directly. One crosshair moves across all
+The dashboard is the one in the [demo](#demo) above: ground truth on top,
+proxies beneath it on a shared time axis. One crosshair moves across all
 channels; arrow keys step record by record.
 
 Useful variants:
