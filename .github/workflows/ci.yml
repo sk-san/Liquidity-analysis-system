@@ -1,23 +1,75 @@
 name: ci
 
+# Pushes to a PR branch are covered by the pull_request trigger, so push is
+# scoped to main. Without that scoping every push ran the job twice.
 on:
   push:
+    branches: [main]
   pull_request:
+
+# A superseded run has nothing left to prove; cancel it rather than letting it
+# occupy a runner.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    # The job normally finishes in about ninety seconds. The cap is here
+    # because an apt-get stall once held a runner for the full six-hour
+    # default before failing.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+
       - name: Install ZeroMQ
         # Required by CALCULATION_ENGINE_BUILD_SERVICE, which the release
         # preset enables. The service uses the C API (<zmq.h>).
+        timeout-minutes: 5
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libzmq3-dev
+
       - name: Configure
         run: cmake --preset release
+
       - name: Build
         run: cmake --build --preset release -j2
+
       - name: Test
         run: ctest --preset release
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python components
+        # Only the three components whose tests run here. The vendored ABIDES
+        # fork and its emitter extension are deliberately left out: nothing in
+        # these suites imports them, and installing them would pull the
+        # simulator's full dependency set into every run.
+        # Unlike `make install-dev` these installs keep pip's build isolation,
+        # so setuptools is fetched per build rather than assumed present in
+        # the runner's interpreter.
+        run: |
+          python -m pip install -r requirements-dev.txt
+          python -m pip install -e packages/market-data-protocol
+          python -m pip install -e components/pacing-server
+          python -m pip install -e components/metrics-bridge
+
+      - name: Python tests
+        # Paths are listed explicitly rather than collecting from the root,
+        # which would sweep in the vendored ABIDES fork's own test tree.
+        run: |
+          pytest \
+            packages/market-data-protocol/tests \
+            components/pacing-server/tests \
+            components/metrics-bridge/tests
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Metrics UI tests
+        run: node --test components/metrics-ui/tests/*.test.js

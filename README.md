@@ -137,9 +137,10 @@ of the non-obvious choices:
 - **A deterministic visible-book checksum** travels with every record, so a
   reconstruction bug shows up as a mismatch instead of as a plausible number.
 
-Tested with ctest (C++: shadow book, metrics, decoder, integration) and pytest
-(Python: protocol, pacing journal and clock, bridge), both run on every push by
-[CI](.github/workflows/ci.yml).
+Tested with ctest (C++: shadow book, metrics, decoder, integration), pytest
+(Python: protocol, pacing journal and clock, bridge), and `node --test`
+(browser: stream decoding and book-level normalization). All three run on every
+pull request by [CI](.github/workflows/ci.yml).
 
 ## How to run it
 
