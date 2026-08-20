@@ -456,3 +456,4 @@ MetricsUI.charts = (() => {
 
   return { StripChart, lowerBound };
 })();
+

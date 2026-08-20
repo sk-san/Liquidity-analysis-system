@@ -40,6 +40,14 @@ _NULLABLE_NUMBER_FIELDS = (
     "ask_liquidity_provision_ratio",
 )
 
+_ORDER_BOOK_FIELDS = ("bid_levels", "ask_levels")
+_ORDER_BOOK_LEVEL_FIELDS = (
+    "price",
+    "visible_quantity",
+    "visible_mm_quantity",
+)
+_OPTIONAL_ORDER_BOOK_LEVEL_FIELDS = ("visible_order_count",)
+
 REQUIRED_METRIC_FIELDS = frozenset(
     {
         "run_id",
@@ -64,6 +72,22 @@ def _field_schema(field: str) -> dict[str, Any]:
     return {"type": "string", "minLength": 1}
 
 
+ORDER_BOOK_LEVEL_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "required": list(_ORDER_BOOK_LEVEL_FIELDS),
+    "properties": {
+        field: {"type": "integer", "minimum": 0}
+        for field in (*_ORDER_BOOK_LEVEL_FIELDS, *_OPTIONAL_ORDER_BOOK_LEVEL_FIELDS)
+    },
+    "additionalProperties": True,
+}
+
+ORDER_BOOK_LEVELS_SCHEMA: dict[str, Any] = {
+    "type": "array",
+    "items": ORDER_BOOK_LEVEL_SCHEMA,
+}
+
+
 METRIC_JSON_SCHEMA: dict[str, Any] = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "urn:liquidity-analysis:calculated-market-metric:v1",
@@ -71,7 +95,10 @@ METRIC_JSON_SCHEMA: dict[str, Any] = {
     "type": "object",
     "required": sorted(REQUIRED_METRIC_FIELDS),
     "properties": {
-        field: _field_schema(field) for field in sorted(REQUIRED_METRIC_FIELDS)
+        **{
+            field: _field_schema(field) for field in sorted(REQUIRED_METRIC_FIELDS)
+        },
+        **{field: ORDER_BOOK_LEVELS_SCHEMA for field in _ORDER_BOOK_FIELDS},
     },
     "additionalProperties": True,
 }
@@ -107,6 +134,53 @@ def _require_nullable_number(metric: Mapping[str, Any], field: str) -> None:
         raise MetricValidationError(f"{field} must be finite")
 
 
+def _validate_order_book_levels(metric: Mapping[str, Any], field: str) -> None:
+    levels = metric[field]
+    if not isinstance(levels, list):
+        raise MetricValidationError(f"{field} must be an array")
+
+    for index, level in enumerate(levels):
+        location = f"{field}[{index}]"
+        if not isinstance(level, Mapping):
+            raise MetricValidationError(f"{location} must be an object")
+
+        missing = set(_ORDER_BOOK_LEVEL_FIELDS).difference(level)
+        if missing:
+            raise MetricValidationError(
+                f"{location} missing fields: {sorted(missing)}"
+            )
+
+        for level_field in _ORDER_BOOK_LEVEL_FIELDS:
+            value = level[level_field]
+            if not _is_integer(value):
+                raise MetricValidationError(
+                    f"{location}.{level_field} must be an integer"
+                )
+            if value < 0:
+                raise MetricValidationError(
+                    f"{location}.{level_field} must not be negative"
+                )
+
+        for level_field in _OPTIONAL_ORDER_BOOK_LEVEL_FIELDS:
+            if level_field not in level:
+                continue
+            value = level[level_field]
+            if not _is_integer(value):
+                raise MetricValidationError(
+                    f"{location}.{level_field} must be an integer"
+                )
+            if value < 0:
+                raise MetricValidationError(
+                    f"{location}.{level_field} must not be negative"
+                )
+
+        if level["visible_mm_quantity"] > level["visible_quantity"]:
+            raise MetricValidationError(
+                f"{location}.visible_mm_quantity must not exceed "
+                "visible_quantity"
+            )
+
+
 def validate_metric(value: object) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise MetricValidationError("metric record must be a JSON object")
@@ -129,6 +203,9 @@ def validate_metric(value: object) -> dict[str, Any]:
         _require_nullable_integer(value, field)
     for field in _NULLABLE_NUMBER_FIELDS:
         _require_nullable_number(value, field)
+    for field in _ORDER_BOOK_FIELDS:
+        if field in value:
+            _validate_order_book_levels(value, field)
 
     if value["transport_sequence"] < 1:
         raise MetricValidationError("transport_sequence must be positive")

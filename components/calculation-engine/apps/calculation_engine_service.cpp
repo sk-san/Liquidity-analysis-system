@@ -193,6 +193,26 @@ void write_optional(std::ostream& output, const std::optional<Value>& value) {
     }
 }
 
+void write_book_levels(
+    std::ostream& output,
+    const std::vector<ce::indicators::BookLevel>& levels) {
+    output << '[';
+    bool first = true;
+    for (const auto& level : levels) {
+        if (!first) {
+            output << ',';
+        }
+        first = false;
+        output << '{'
+               << "\"price\":" << level.price
+               << ",\"visible_quantity\":" << level.visible_quantity
+               << ",\"visible_mm_quantity\":" << level.visible_mm_quantity
+               << ",\"visible_order_count\":" << level.visible_order_count
+               << '}';
+    }
+    output << ']';
+}
+
 std::string format_metrics(
     const ce::transport::DecodedEnvelope& envelope,
     const ce::indicators::MarketMetrics& metrics,
@@ -225,6 +245,10 @@ std::string format_metrics(
     write_optional(output, metrics.microprice);
     output << ",\"top_of_book_imbalance\":";
     write_optional(output, metrics.top_of_book_imbalance);
+    output << ",\"bid_levels\":";
+    write_book_levels(output, metrics.bid_levels);
+    output << ",\"ask_levels\":";
+    write_book_levels(output, metrics.ask_levels);
     output << ",\"bid_visible_depth\":" << metrics.bid_visible_depth
            << ",\"ask_visible_depth\":" << metrics.ask_visible_depth
            << ",\"trade_count\":" << metrics.trade_count

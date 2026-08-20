@@ -114,6 +114,19 @@ void test_snapshot_metrics() {
     CHECK(near(*metrics.top_of_book_imbalance, -0.5));
     CHECK(metrics.bid_visible_depth == 15);
     CHECK(metrics.ask_visible_depth == 37);
+    CHECK(metrics.bid_levels.size() == 2);
+    CHECK(metrics.bid_levels[0].price == 100);
+    CHECK(metrics.bid_levels[0].visible_quantity == 10);
+    CHECK(metrics.bid_levels[0].visible_mm_quantity == 0);
+    CHECK(metrics.bid_levels[0].visible_order_count == 1);
+    CHECK(metrics.bid_levels[1].price == 99);
+    CHECK(metrics.bid_levels[1].visible_quantity == 5);
+    CHECK(metrics.ask_levels.size() == 2);
+    CHECK(metrics.ask_levels[0].price == 102);
+    CHECK(metrics.ask_levels[0].visible_quantity == 30);
+    CHECK(metrics.ask_levels[0].visible_order_count == 1);
+    CHECK(metrics.ask_levels[1].price == 103);
+    CHECK(metrics.ask_levels[1].visible_quantity == 7);
     CHECK(metrics.trade_count == 0);
     CHECK(metrics.traded_volume == 0);
     CHECK(!metrics.last_trade_price.has_value());
@@ -144,6 +157,8 @@ void test_empty_and_one_sided_books_leave_derived_prices_empty() {
     CHECK(!empty_metrics.top_of_book_imbalance.has_value());
     CHECK(empty_metrics.bid_visible_depth == 0);
     CHECK(empty_metrics.ask_visible_depth == 0);
+    CHECK(empty_metrics.bid_levels.empty());
+    CHECK(empty_metrics.ask_levels.empty());
 
     ce::order_book::ShadowBook one_sided("ONE");
     must_apply(one_sided, ce::market_data::SnapshotEvent{6, 0, "ONE", {
@@ -169,6 +184,11 @@ void test_empty_and_one_sided_books_leave_derived_prices_empty() {
     CHECK(!one_sided_metrics.top_of_book_imbalance.has_value());
     CHECK(one_sided_metrics.bid_visible_depth == 9);
     CHECK(one_sided_metrics.ask_visible_depth == 0);
+    CHECK(one_sided_metrics.bid_levels.size() == 1);
+    CHECK(one_sided_metrics.bid_levels[0].price == 100);
+    CHECK(one_sided_metrics.bid_levels[0].visible_quantity == 9);
+    CHECK(one_sided_metrics.bid_levels[0].visible_order_count == 1);
+    CHECK(one_sided_metrics.ask_levels.empty());
 }
 
 void test_depth_limit_and_hidden_orders() {
@@ -179,7 +199,7 @@ void test_depth_limit_and_hidden_orders() {
         order(3, ce::market_data::Side::Bid, 99, 20),
         order(4, ce::market_data::Side::Bid, 98, 30),
         order(5, ce::market_data::Side::Ask, 101, 5),
-        order(6, ce::market_data::Side::Ask, 102, 7),
+        order(6, ce::market_data::Side::Ask, 102, 7, true),
         order(7, ce::market_data::Side::Ask, 103, 11),
         order(
             8,
@@ -207,6 +227,24 @@ void test_depth_limit_and_hidden_orders() {
     CHECK(metrics.best_ask_quantity == 5);
     CHECK(metrics.bid_visible_depth == 30);
     CHECK(metrics.ask_visible_depth == 12);
+    CHECK(metrics.bid_levels.size() == 2);
+    CHECK(metrics.bid_levels[0].price == 100);
+    CHECK(metrics.bid_levels[0].visible_quantity == 10);
+    CHECK(metrics.bid_levels[0].visible_mm_quantity == 4);
+    CHECK(metrics.bid_levels[0].visible_order_count == 2);
+    CHECK(metrics.bid_levels[1].price == 99);
+    CHECK(metrics.bid_levels[1].visible_quantity == 20);
+    CHECK(metrics.bid_levels[1].visible_mm_quantity == 0);
+    CHECK(metrics.bid_levels[1].visible_order_count == 1);
+    CHECK(metrics.ask_levels.size() == 2);
+    CHECK(metrics.ask_levels[0].price == 101);
+    CHECK(metrics.ask_levels[0].visible_quantity == 5);
+    CHECK(metrics.ask_levels[0].visible_mm_quantity == 0);
+    CHECK(metrics.ask_levels[0].visible_order_count == 1);
+    CHECK(metrics.ask_levels[1].price == 102);
+    CHECK(metrics.ask_levels[1].visible_quantity == 7);
+    CHECK(metrics.ask_levels[1].visible_mm_quantity == 7);
+    CHECK(metrics.ask_levels[1].visible_order_count == 1);
 }
 
 void test_large_top_quantities_do_not_overflow_derived_metrics() {

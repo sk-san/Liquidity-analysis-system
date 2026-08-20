@@ -27,9 +27,14 @@ parameter: `index.html?bridge=http://host:port`.
   for this pair.
 - **Instrument bar** — midprice, quoted spread, microprice, best bid/ask with
   size, top-of-book imbalance, traded volume.
+- **Real-time L2 order book** — the top 10 visible bid and ask levels arrive
+  with each metric event and are rendered as one atomic snapshot. The mirrored
+  ladder shows price, visible size, visible market-maker size, cumulative depth,
+  and depth bars normalized across both sides. Its summary reports spread,
+  midpoint, full-ladder imbalance, and visible depth.
 - **Strip charts on one shared time axis** — MM liquidity provision ratio,
-  price with trade prints, imbalance, and visible depth. Hovering or focusing the
-  charts moves one crosshair across all channels and pins each channel's
+  price with trade prints, imbalance, and visible depth. Hovering or focusing
+  the charts moves one crosshair across all channels and pins each channel's
   readout to that record; arrow keys step record by record.
 - **Table view** — the most recent records as numbers, the accessible twin of
   the charts.
@@ -37,9 +42,25 @@ parameter: `index.html?bridge=http://host:port`.
   slow-client gaps, book desynchronization, and run changes are reported,
   never hidden.
 
-Bid-side series are always blue, ask-side series always orange, in every
-channel and both color schemes (the palette is colorblind-checked in light and
-dark mode). Prices arrive as integer cents and are displayed in dollars.
+Bid-side data is always blue and ask-side data is always orange in the ladder,
+tiles, readouts, and charts. Status green, amber, and red are kept separate from
+those market-side semantics. Prices arrive as integer cents and are displayed
+in dollars.
+
+## Themes
+
+The theme selector is saved in browser-local storage and offers four choices:
+
+- **System** follows the operating-system preference, using Quartz in light
+  mode and Carbon in dark mode.
+- **Quartz** is the fixed light analyst palette.
+- **Carbon** is a neutral dark palette intended for long monitoring sessions.
+- **Midnight** is a cooler dark operations palette with stronger chart
+  separation.
+
+All four choices preserve bid-blue and ask-orange semantics. Changing themes
+also updates the canvas charts immediately; it does not change the data or the
+selected symbol.
 
 ## Contract details it honors
 
@@ -51,10 +72,26 @@ dark mode). Prices arrive as integer cents and are displayed in dollars.
 - **Reconnect replays** are deduplicated by `transport_sequence`, so the
   browser's automatic `EventSource` recovery (with `Last-Event-ID`) never
   double-plots a record. A new `run_id` resets the page state.
+- **Atomic L2 snapshots** travel in the same metric SSE event as their summary
+  metrics. `bid_levels` and `ask_levels` are accepted only as a complete pair,
+  and the browser replaces the selected symbol's previous ladder rather than
+  merging levels from different events or symbols. Only the current snapshot
+  per symbol is retained, while chart history remains bounded separately.
+- **Pause and symbol selection** freeze the displayed chart time and capture
+  the current order-book snapshot for every known symbol. Data continues to
+  buffer in the background, and switching symbols while paused shows that
+  symbol's frozen state rather than jumping its ladder back to live. Resume
+  catches the whole display up to the newest records.
 - **`gap` and `reset` events** break the plotted lines instead of
   interpolating across lost records, and land in the event feed.
 - **`synchronized=false`** records stay visible (they are diagnostics) but
-  raise a persistent warning banner, per `docs/architecture.md`.
+  raise a persistent warning banner. The ladder is marked **Desynced** and its
+  depth is explicitly treated as stale diagnostic data until a fresh book
+  snapshot restores synchronization, per `docs/architecture.md`.
+- **Legacy aggregate-only records** remain supported because the L2 arrays are
+  optional in the bridge schema. For recordings that predate them, the ladder
+  reports **Aggregate only** while best bid/ask and aggregate visible depth
+  continue to appear in the instrument bar and history chart.
 - Dense windows are decimated per pixel column keeping min and max, so spikes
   survive; the microprice is shown as a number but not plotted, because it
   differs from the midprice by at most half the quoted spread — sub-pixel at
@@ -63,10 +100,10 @@ dark mode). Prices arrive as integer cents and are displayed in dollars.
 ## Files
 
 ```text
-index.html        page structure
-assets/styles.css theme tokens (light/dark), layout
+index.html        page structure and accessible order-book tables
+assets/styles.css Quartz/Carbon/Midnight theme tokens, responsive layout
 assets/format.js  BigInt-safe parsing, price/time formatting
-assets/stream.js  EventSource feed, series buffers, dedupe, event log
+assets/stream.js  EventSource feed, series buffers, atomic L2 snapshots, dedupe
 assets/charts.js  canvas strip-chart renderer (decimation, crosshair)
-assets/app.js     page wiring: controls, tiles, table, render loop
+assets/app.js     page wiring: controls, order book, tiles, table, render loop
 ```

@@ -12,7 +12,11 @@ from typing import Iterator
 import pytest
 
 from metrics_bridge.ingest import ingest_path, ingest_stream, ingest_zmq
-from metrics_bridge.model import MetricValidationError, parse_metric_line
+from metrics_bridge.model import (
+    METRIC_JSON_SCHEMA,
+    MetricValidationError,
+    parse_metric_line,
+)
 from metrics_bridge.server import MetricsBridgeServer
 from metrics_bridge.store import GapNotice, MetricStore, PublishedMetric
 
@@ -43,6 +47,22 @@ def metric(*, sequence: int = 7, symbol: str = "ABM") -> dict[str, object]:
         "bid_liquidity_provision_ratio": None,
         "ask_liquidity_provision_ratio": 0,
         "visible_checksum": 1_991_653_312_153_916_401,
+        "bid_levels": [
+            {
+                "price": 99994,
+                "visible_quantity": 100,
+                "visible_mm_quantity": 40,
+                "visible_order_count": 2,
+            }
+        ],
+        "ask_levels": [
+            {
+                "price": 99995,
+                "visible_quantity": 200,
+                "visible_mm_quantity": 120,
+                "visible_order_count": 3,
+            }
+        ],
     }
 
 
@@ -70,6 +90,109 @@ def running_server(
 def test_parses_reference_metric_shape() -> None:
     expected = metric()
     assert parse_metric_line(json.dumps(expected)) == expected
+
+
+def test_order_book_levels_are_optional_for_legacy_records() -> None:
+    legacy = metric()
+    del legacy["bid_levels"]
+    del legacy["ask_levels"]
+
+    assert parse_metric_line(json.dumps(legacy)) == legacy
+    assert "bid_levels" not in METRIC_JSON_SCHEMA["required"]
+    assert "ask_levels" not in METRIC_JSON_SCHEMA["required"]
+
+
+def test_order_book_level_arrays_may_be_empty() -> None:
+    expected = metric()
+    expected["bid_levels"] = []
+    expected["ask_levels"] = []
+
+    assert parse_metric_line(json.dumps(expected)) == expected
+
+
+def test_schema_describes_nested_order_book_levels() -> None:
+    for field in ("bid_levels", "ask_levels"):
+        levels_schema = METRIC_JSON_SCHEMA["properties"][field]
+        assert levels_schema["type"] == "array"
+        level_schema = levels_schema["items"]
+        assert set(level_schema["required"]) == {
+            "price",
+            "visible_quantity",
+            "visible_mm_quantity",
+        }
+        assert all(
+            level_schema["properties"][name] == {
+                "type": "integer",
+                "minimum": 0,
+            }
+            for name in level_schema["required"]
+        )
+        assert level_schema["properties"]["visible_order_count"] == {
+            "type": "integer",
+            "minimum": 0,
+        }
+
+
+@pytest.mark.parametrize(
+    ("field", "levels", "message"),
+    [
+        ("bid_levels", None, "bid_levels must be an array"),
+        ("ask_levels", {}, "ask_levels must be an array"),
+        ("bid_levels", ["not-a-level"], r"bid_levels\[0\] must be an object"),
+        (
+            "bid_levels",
+            [{"visible_quantity": 1, "visible_mm_quantity": 0}],
+            r"bid_levels\[0\] missing fields",
+        ),
+        (
+            "bid_levels",
+            [{"price": True, "visible_quantity": 1, "visible_mm_quantity": 0}],
+            r"bid_levels\[0\]\.price must be an integer",
+        ),
+        (
+            "ask_levels",
+            [{"price": -1, "visible_quantity": 1, "visible_mm_quantity": 0}],
+            r"ask_levels\[0\]\.price must not be negative",
+        ),
+        (
+            "bid_levels",
+            [{"price": 1, "visible_quantity": -1, "visible_mm_quantity": 0}],
+            r"bid_levels\[0\]\.visible_quantity must not be negative",
+        ),
+        (
+            "ask_levels",
+            [{"price": 1, "visible_quantity": 1, "visible_mm_quantity": -1}],
+            r"ask_levels\[0\]\.visible_mm_quantity must not be negative",
+        ),
+        (
+            "bid_levels",
+            [{"price": 1, "visible_quantity": 2, "visible_mm_quantity": 3}],
+            r"bid_levels\[0\]\.visible_mm_quantity must not exceed",
+        ),
+        (
+            "bid_levels",
+            [
+                {
+                    "price": 1,
+                    "visible_quantity": 2,
+                    "visible_mm_quantity": 1,
+                    "visible_order_count": True,
+                }
+            ],
+            r"bid_levels\[0\]\.visible_order_count must be an integer",
+        ),
+    ],
+)
+def test_rejects_malformed_order_book_levels(
+    field: str,
+    levels: object,
+    message: str,
+) -> None:
+    invalid = metric()
+    invalid[field] = levels
+
+    with pytest.raises(MetricValidationError, match=message):
+        parse_metric_line(json.dumps(invalid))
 
 
 def test_rejects_missing_and_non_finite_values() -> None:

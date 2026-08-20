@@ -20,6 +20,14 @@
       <label class="symbol-field">Symbol
         <select id="symbolSel" aria-label="Symbol"></select>
       </label>
+      <label class="theme-field">Theme
+        <select id="themeSel" aria-label="Color theme">
+          <option value="system">System</option>
+          <option value="light">Quartz</option>
+          <option value="dark">Carbon</option>
+          <option value="midnight">Midnight</option>
+        </select>
+      </label>
       <span class="pill" id="conn" data-state="connecting" role="status">
         <span class="dot"></span><span>Connecting…</span>
       </span>
@@ -82,6 +90,62 @@
       <div class="value" id="t-act">—</div>
       <div class="sub" id="t-act-sub">—</div>
     </article>
+  </section>
+
+  <section class="order-book" id="orderBook" aria-labelledby="bookTitle">
+    <header class="book-head">
+      <div>
+        <span class="eyebrow">Live microstructure</span>
+        <h2 id="bookTitle">Order book <small>L2 · top 10 levels</small></h2>
+      </div>
+      <div class="book-state">
+        <span class="book-badge" id="bookStatus" data-state="waiting">
+          <span class="dot"></span><span>Waiting</span>
+        </span>
+        <span class="book-stamp" id="bookStamp">no snapshot</span>
+      </div>
+    </header>
+
+    <dl class="book-summary">
+      <div><dt>Spread</dt><dd id="bookSpread">—</dd></div>
+      <div><dt>Midpoint</dt><dd id="bookMid">—</dd></div>
+      <div><dt>Imbalance</dt><dd id="bookImbalance">—</dd></div>
+      <div><dt>Visible depth</dt><dd id="bookDepth">—</dd></div>
+    </dl>
+
+    <div class="book-ladder">
+      <section class="book-side" data-side="bid" aria-labelledby="bidBookTitle">
+        <h3 id="bidBookTitle"><span class="key" style="--k: var(--series-bid)"></span>Bid</h3>
+        <table>
+          <caption class="visually-hidden">Current visible bid levels, best price first</caption>
+          <thead><tr>
+            <th scope="col">Cum</th>
+            <th scope="col">Size</th>
+            <th scope="col">MM</th>
+            <th scope="col">Price</th>
+          </tr></thead>
+          <tbody id="bidBookRows"></tbody>
+        </table>
+      </section>
+
+      <div class="book-spine" aria-hidden="true"></div>
+
+      <section class="book-side" data-side="ask" aria-labelledby="askBookTitle">
+        <h3 id="askBookTitle"><span class="key" style="--k: var(--series-ask)"></span>Ask</h3>
+        <table>
+          <caption class="visually-hidden">Current visible ask levels, best price first</caption>
+          <thead><tr>
+            <th scope="col">Price</th>
+            <th scope="col">MM</th>
+            <th scope="col">Size</th>
+            <th scope="col">Cum</th>
+          </tr></thead>
+          <tbody id="askBookRows"></tbody>
+        </table>
+      </section>
+    </div>
+
+    <p class="book-note" id="bookNote">Waiting for the first atomic depth snapshot.</p>
   </section>
 
   <main

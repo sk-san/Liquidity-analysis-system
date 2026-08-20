@@ -15,12 +15,15 @@
     window: "5m",
     paused: false,
     frozenT1: null,
+    frozenBooks: null,
     crossIndex: null,
     tableOpen: false,
+    themeChoice: "system",
     dirty: true,
     lastWarn: null,
     lastTableRender: 0,
     lastTileRender: 0,
+    lastBookRender: 0,
   };
 
   /* ---------- theme ---------- */
@@ -33,6 +36,7 @@
   };
 
   let theme = null;
+  const THEME_CHOICES = new Set(["system", "light", "dark", "midnight"]);
 
   function readTheme() {
     const style = getComputedStyle(document.documentElement);
@@ -48,6 +52,31 @@
       muted: token("--muted"),
       color: (name) => colors[name],
     };
+  }
+
+  function storedTheme() {
+    try {
+      const saved = localStorage.getItem("liquidity-ui-theme");
+      return THEME_CHOICES.has(saved) ? saved : "system";
+    } catch {
+      return "system";
+    }
+  }
+
+  function applyTheme(choice, persist = true) {
+    const selected = THEME_CHOICES.has(choice) ? choice : "system";
+    state.themeChoice = selected;
+    document.documentElement.dataset.theme = selected;
+    $("themeSel").value = selected;
+    if (persist) {
+      try {
+        localStorage.setItem("liquidity-ui-theme", selected);
+      } catch {
+        /* Theme selection still works when storage is unavailable. */
+      }
+    }
+    readTheme();
+    state.dirty = true;
   }
 
   /* ---------- charts ---------- */
@@ -132,6 +161,7 @@
   feed.on("state", () => {
     renderStatus();
     renderBanner();
+    state.dirty = true;
   });
 
   feed.on("log", (entry) => {
@@ -153,6 +183,23 @@
 
   function activeSeries() {
     return state.symbol ? feed.get(state.symbol) : null;
+  }
+
+  function activeBook() {
+    if (state.paused && state.frozenBooks instanceof Map) {
+      return state.frozenBooks.get(state.symbol) || null;
+    }
+    const series = activeSeries();
+    return series ? series.book : null;
+  }
+
+  function captureBooks() {
+    const books = new Map();
+    for (const symbol of feed.symbolList()) {
+      const series = feed.get(symbol);
+      books.set(symbol, series ? series.book : null);
+    }
+    return books;
   }
 
   // Latest visible point index; when paused, the display is frozen at the
@@ -257,6 +304,142 @@
         : `${Math.min(Math.max(ratio, 0), 1) * 100}%`;
   }
 
+  function renderBookEmpty(body, message) {
+    body.replaceChildren();
+    const row = document.createElement("tr");
+    row.className = "book-empty";
+    const cell = document.createElement("td");
+    cell.colSpan = 4;
+    cell.textContent = message;
+    row.append(cell);
+    body.append(row);
+  }
+
+  function bookCell(text, className = "") {
+    const cell = document.createElement("td");
+    cell.textContent = text;
+    if (className) cell.className = className;
+    return cell;
+  }
+
+  function renderBookSide(bodyId, levels, side, maxQuantity, unavailable) {
+    const body = $(bodyId);
+    if (unavailable) {
+      renderBookEmpty(body, "Level detail unavailable for this recording");
+      return;
+    }
+    if (!levels.length) {
+      renderBookEmpty(body, `No visible ${side}s`);
+      return;
+    }
+
+    body.replaceChildren();
+    const fragment = document.createDocumentFragment();
+    let cumulative = 0;
+    for (const level of levels) {
+      cumulative += level.qty;
+      const row = document.createElement("tr");
+      const width = maxQuantity > 0 ? (level.qty / maxQuantity) * 100 : 0;
+      row.style.setProperty("--depth-fill", `${Math.min(width, 100).toFixed(2)}%`);
+
+      const price = bookCell(fmt.price(level.price), "price");
+      const quantity = bookCell(fmt.qty(level.qty), "quantity");
+      if (level.orderCount !== null) {
+        quantity.title = `${fmt.qty(level.orderCount)} visible ${
+          level.orderCount === 1 ? "order" : "orders"
+        }`;
+      }
+      const mm = bookCell(fmt.qty(level.mmQty), "mm-share");
+      mm.title =
+        level.qty > 0
+          ? `${fmt.pct(level.mmQty / level.qty)} of this level is market-maker liquidity`
+          : "No visible quantity";
+      const cum = bookCell(fmt.qty(cumulative), "cumulative");
+
+      if (side === "bid") row.append(cum, quantity, mm, price);
+      else row.append(price, mm, quantity, cum);
+      fragment.append(row);
+    }
+    body.append(fragment);
+  }
+
+  function renderBook(book, latest) {
+    const panel = $("orderBook");
+    const badge = $("bookStatus");
+    const badgeLabel = badge.querySelector("span:last-child");
+    const unavailable = book === null;
+    const bids = book ? book.bids : [];
+    const asks = book ? book.asks : [];
+    const maxQuantity = Math.max(
+      1,
+      ...bids.map((level) => level.qty),
+      ...asks.map((level) => level.qty)
+    );
+
+    const legacy = unavailable && latest !== null;
+    renderBookSide("bidBookRows", bids, "bid", maxQuantity, legacy);
+    renderBookSide("askBookRows", asks, "ask", maxQuantity, legacy);
+
+    const bidDepth = book
+      ? bids.reduce((sum, level) => sum + level.qty, 0)
+      : latest
+        ? latest.depthBid
+        : null;
+    const askDepth = book
+      ? asks.reduce((sum, level) => sum + level.qty, 0)
+      : latest
+        ? latest.depthAsk
+        : null;
+    const totalDepth =
+      bidDepth !== null && askDepth !== null ? bidDepth + askDepth : 0;
+    const depthImbalance = totalDepth > 0 ? (bidDepth - askDepth) / totalDepth : null;
+
+    $("bookSpread").textContent = latest ? fmt.cents(latest.spread) : "—";
+    $("bookMid").textContent = latest ? fmt.price(latest.mid) : "—";
+    $("bookImbalance").textContent = fmt.signed(depthImbalance);
+    $("bookDepth").textContent =
+      bidDepth === null || askDepth === null
+        ? "—"
+        : `${fmt.qtyCompact(bidDepth)} bid · ${fmt.qtyCompact(askDepth)} ask`;
+
+    let status = "waiting";
+    let label = "Waiting";
+    let note = "Waiting for the first atomic depth snapshot.";
+    if (book && !book.sync) {
+      status = "desynced";
+      label = "Desynced";
+      note =
+        "Stale diagnostic depth — do not use this ladder until a fresh snapshot restores synchronization.";
+    } else if (book && state.paused) {
+      status = "paused";
+      label = "Paused";
+      note = "Depth is frozen with the display; incoming snapshots continue buffering.";
+    } else if (book && feed.state !== "live") {
+      status = "stale";
+      label = "Last known";
+      note = "Showing the last complete depth snapshot while the stream reconnects.";
+    } else if (book) {
+      status = "live";
+      label = "Live";
+      note =
+        "Each ladder update is atomic with its metric event; bars compare visible size across both sides.";
+    } else if (latest) {
+      status = "legacy";
+      label = "Aggregate only";
+      note =
+        "This recording predates L2 snapshots; best prices and aggregate depth remain available above.";
+    }
+
+    panel.dataset.state = status;
+    badge.dataset.state = status;
+    badgeLabel.textContent = label;
+    $("bookNote").textContent = note;
+    const stampPoint = book || latest;
+    $("bookStamp").textContent = stampPoint
+      ? `seq ${fmt.qty(stampPoint.seq)} · ${fmt.simClock(stampPoint.t)} sim`
+      : "no snapshot";
+  }
+
   function renderTiles(latest) {
     $("t-mid").textContent = latest ? fmt.price(latest.mid) : "—";
     $("t-mid-sub").textContent = latest
@@ -352,6 +535,7 @@
     const points = series ? series.points : [];
     const iLatest = latestIndex(points);
     const latest = iLatest >= 0 ? points[iLatest] : null;
+    const book = activeBook();
 
     const windowMs = WINDOWS[state.window];
     const t1 = latest ? latest.t : 0;
@@ -388,6 +572,13 @@
 
     const inspecting = state.crossIndex !== null;
     renderReadouts(inspecting ? points[state.crossIndex] : latest);
+
+    if (now - state.lastBookRender > 100) {
+      state.lastBookRender = now;
+      renderBook(book, latest);
+    } else {
+      state.dirty = true;
+    }
 
     // Throttled targets get a trailing render: when a frame lands inside the
     // throttle window, stay dirty so the final state is never skipped.
@@ -534,6 +725,10 @@
     selectSymbol(event.target.value);
   });
 
+  $("themeSel").addEventListener("change", (event) => {
+    applyTheme(event.target.value);
+  });
+
   for (const button of document.querySelectorAll("[data-win]")) {
     button.addEventListener("click", () => {
       state.window = button.dataset.win;
@@ -553,6 +748,7 @@
     const series = activeSeries();
     const latest = series ? series.latest() : null;
     state.frozenT1 = state.paused && latest ? latest.t : null;
+    state.frozenBooks = state.paused ? captureBooks() : null;
     $("pauseBtn").setAttribute("aria-pressed", state.paused ? "true" : "false");
     $("pauseBtn").textContent = state.paused ? "Resume" : "Pause";
     state.dirty = true;
@@ -582,8 +778,10 @@
   window
     .matchMedia("(prefers-color-scheme: dark)")
     .addEventListener("change", () => {
-      readTheme();
-      state.dirty = true;
+      if (state.themeChoice === "system") {
+        readTheme();
+        state.dirty = true;
+      }
     });
 
   setInterval(() => {
@@ -599,7 +797,7 @@
     requestAnimationFrame(frameLoop);
   }
 
-  readTheme();
+  applyTheme(storedTheme(), false);
   layoutAll();
   renderStatus();
   renderFeed();

@@ -23,6 +23,20 @@ VisibleDepth summarize_visible_depth(
     return result;
 }
 
+std::vector<BookLevel> snapshot_levels(
+    const std::vector<order_book::LevelView>& levels) {
+    std::vector<BookLevel> result;
+    result.reserve(levels.size());
+    for (const auto& level : levels) {
+        result.push_back(BookLevel{
+            level.price,
+            level.visible_quantity,
+            level.visible_mm_quantity,
+            level.visible_fifo.size()});
+    }
+    return result;
+}
+
 std::optional<double> liquidity_ratio(
     long double market_maker_quantity_time,
     long double total_quantity_time,
@@ -213,6 +227,8 @@ MarketMetrics MarketMetricsCalculator::calculate(
     const auto ask_depth = summarize_visible_depth(ask_levels);
     result.bid_visible_depth = bid_depth.total;
     result.ask_visible_depth = ask_depth.total;
+    result.bid_levels = snapshot_levels(bid_levels);
+    result.ask_levels = snapshot_levels(ask_levels);
 
     const auto ratios = update_liquidity_ratios(
         result.symbol,
