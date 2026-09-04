@@ -20,7 +20,7 @@ METRICS_HOLD ?= 0
 
 FULL_SYSTEM_STATE ?= state/full-system
 
-.PHONY: install-dev test build-calculation-engine run-calculation-engine run-metrics-bridge abides-jpmc-install abides-jpmc-sim run run-all clean
+.PHONY: install-dev install-lint lint lint-fix format-cpp test build-calculation-engine run-calculation-engine run-metrics-bridge abides-jpmc-install abides-jpmc-sim run run-all clean
 
 install-dev:
 	python -m pip install -r requirements-dev.txt
@@ -29,8 +29,35 @@ install-dev:
 	python -m pip install --no-build-isolation -e components/pacing-server
 	python -m pip install --no-build-isolation -e components/metrics-bridge
 
+install-lint:
+	python -m pip install -r requirements-lint.txt
+
+# Same two commands the CI lint job runs, at the same pinned versions, so a
+# clean run here means a clean run there.
+lint: install-lint
+	ruff check .
+	ruff format --check --diff .
+
+lint-fix: install-lint
+	ruff check --fix .
+	ruff format .
+
+# Not wired into CI. The C++ predates .clang-format, so CI only enforces the
+# style on lines a change touches; this target reformats the whole tree when
+# that ~1900-line diff is worth taking deliberately.
+format-cpp: install-lint
+	find components/calculation-engine \
+		\( -name '*.cpp' -o -name '*.hpp' \) \
+		-not -path '*/build/*' -print0 | xargs -0 clang-format -i
+
+# The same three paths CI runs. A bare `pytest` from the root collects the
+# vendored ABIDES fork's own test tree, which needs the simulator's full
+# dependency set and is not this repository's to keep green.
 test:
-	pytest
+	pytest \
+		packages/market-data-protocol/tests \
+		components/pacing-server/tests \
+		components/metrics-bridge/tests
 
 build-calculation-engine:
 	cmake -S components/calculation-engine -B build/calculation-engine -DCMAKE_BUILD_TYPE=Release

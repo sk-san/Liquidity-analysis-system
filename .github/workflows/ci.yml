@@ -13,15 +13,24 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Nothing here writes to the repository. Declared explicitly so the jobs keep
+# a read-only token even if the repository default is later widened.
+permissions:
+  contents: read
+
+# Third-party actions are pinned by commit SHA rather than by tag: a tag can be
+# moved to point at new code, a SHA cannot. Dependabot proposes the bumps and
+# rewrites the trailing version comment along with the SHA.
 jobs:
-  build-and-test:
+  cpp:
+    name: C++ build and test
     runs-on: ubuntu-latest
     # The job normally finishes in about ninety seconds. The cap is here
     # because an apt-get stall once held a runner for the full six-hour
     # default before failing.
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Install ZeroMQ
         # Required by CALCULATION_ENGINE_BUILD_SERVICE, which the release
@@ -40,9 +49,52 @@ jobs:
       - name: Test
         run: ctest --preset release
 
-      - uses: actions/setup-python@v5
+  sanitizers:
+    name: C++ ASan and UBSan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Install ZeroMQ
+        timeout-minutes: 5
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libzmq3-dev
+
+      - name: Configure
+        run: cmake --preset sanitized
+
+      - name: Build
+        run: cmake --build --preset sanitized -j2
+
+      - name: Test
+        # UBSan only prints a diagnostic by default and leaves the exit status
+        # at zero, which would make this job green on a real finding.
+        # halt_on_error makes the first report fail the test.
+        env:
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+          ASAN_OPTIONS: detect_leaks=1
+        run: ctest --preset sanitized
+
+  python:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # Every first-party package declares requires-python = ">=3.11", so
+        # each supported interpreter is tested rather than just the oldest.
+        python-version: ['3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: '3.11'
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
 
       - name: Install Python components
         # Only the three components whose tests run here. The vendored ABIDES
@@ -67,9 +119,96 @@ jobs:
             components/pacing-server/tests \
             components/metrics-bridge/tests
 
-      - uses: actions/setup-node@v4
+  ui:
+    name: Metrics UI (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['20', '22']
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
-          node-version: '20'
+          node-version: ${{ matrix.node-version }}
 
       - name: Metrics UI tests
         run: node --test components/metrics-ui/tests/*.test.js
+
+  lint:
+    name: Lint and format
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # git-clang-format below needs the merge base, which a shallow
+          # clone does not contain.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: requirements-lint.txt
+
+      - name: Install lint tooling
+        # Pinned in requirements-lint.txt so that `make lint` and this job run
+        # byte-identical formatters. An unpinned formatter reformats the
+        # world on its next release.
+        run: python -m pip install -r requirements-lint.txt
+
+      - name: Ruff lint
+        run: ruff check --output-format=github .
+
+      - name: Ruff format
+        run: ruff format --check --diff .
+
+      - name: C++ format (changed lines)
+        # Scoped to the lines this change touches. The existing C++ predates
+        # the .clang-format file and reformatting it wholesale would be ~1900
+        # lines of churn across every file, so the rule is enforced going
+        # forward instead. `make format-cpp` reformats the whole tree when
+        # that churn is worth taking in one deliberate commit.
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ -z "${BASE_SHA}" ] || [ "${BASE_SHA}" = "0000000000000000000000000000000000000000" ]; then
+            echo "No base revision to compare against; skipping."
+            exit 0
+          fi
+          output=$(git-clang-format --diff --extensions cpp,hpp "${BASE_SHA}" \
+            -- components/calculation-engine packages)
+          case "${output}" in
+            "no modified files to format"|"clang-format did not modify any files")
+              echo "${output}"
+              ;;
+            *)
+              echo "Changed lines are not clang-formatted. Apply this diff:"
+              echo "${output}"
+              exit 1
+              ;;
+          esac
+
+  docker:
+    name: Pacing server image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      # Built but never pushed: the point is to catch a Dockerfile that stops
+      # building, which nothing else in this repository would notice. There is
+      # no registry to publish to yet.
+      - name: Build image
+        run: |
+          docker build \
+            --file components/pacing-server/Dockerfile \
+            --tag abides-pacing-server:ci \
+            .
+
+      - name: Smoke-test entrypoint
+        run: docker run --rm abides-pacing-server:ci --help

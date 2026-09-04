@@ -1,0 +1,33 @@
+# Lint and format settings for the first-party Python in this repository.
+# CI runs `ruff check` and `ruff format --check` with this file; `make lint`
+# runs the same two commands, so a clean local run means a clean CI run.
+
+# Matches ColumnLimit in .clang-format, so Python and C++ wrap at the same
+# width and side-by-side files in the docs line up.
+line-length = 100
+
+# Every first-party package declares requires-python = ">=3.11".
+target-version = "py311"
+
+extend-exclude = [
+    # Vendored ABIDES fork. It is upstream code on its own release cadence;
+    # reformatting it would make every future merge from upstream conflict.
+    "components/abides",
+    "build",
+    "cmake-build-*",
+]
+
+[lint]
+# Chosen explicitly rather than inherited: ruff widens its default rule set
+# between releases, and an unpinned default turns a routine version bump into
+# a red build.
+#   E/W  pycodestyle   F  pyflakes      I  import sorting
+#   UP   pyupgrade     B  bugbear (likely-bug patterns)
+select = ["E", "W", "F", "I", "UP", "B"]
+
+[lint.per-file-ignores]
+# Both entry points prepend the in-repo package paths to sys.path so they run
+# from a clean checkout without an editable install. The imports that follow
+# depend on that, so they cannot move to the top of the file.
+"scripts/run_abides_sim.py" = ["E402"]
+"scripts/run_full_system.py" = ["E402"]

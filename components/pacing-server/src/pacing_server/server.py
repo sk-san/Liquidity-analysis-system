@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from typing import Any
 
 import zmq
-
 from market_data_protocol import (
     MarketDataEnvelope,
     WireDecodeError,
@@ -95,7 +94,7 @@ class PacingServer:
             thread.join(timeout=timeout)
         self._journal.close()
 
-    def __enter__(self) -> "PacingServer":
+    def __enter__(self) -> PacingServer:
         self.start()
         return self
 
@@ -163,9 +162,7 @@ class PacingServer:
             if socket is not None:
                 socket.close(linger=self.config.linger_ms)
 
-    def _handle_hello(
-        self, socket: zmq.Socket, identity: bytes, body: Mapping[str, Any]
-    ) -> None:
+    def _handle_hello(self, socket: zmq.Socket, identity: bytes, body: Mapping[str, Any]) -> None:
         run_id = str(body.get("run_id", ""))
         if not run_id:
             self._send_control(socket, identity, "NACK", reason="HELLO missing run_id")
@@ -201,10 +198,7 @@ class PacingServer:
         with self._active_run_lock:
             if self._active_run_id is None:
                 self._active_run_id = envelope.run_id
-            elif (
-                not self.config.allow_multiple_runs
-                and self._active_run_id != envelope.run_id
-            ):
+            elif not self.config.allow_multiple_runs and self._active_run_id != envelope.run_id:
                 self._send_control(
                     socket,
                     identity,
@@ -257,9 +251,7 @@ class PacingServer:
             )
         self._source_watermarks[key] = envelope.source_sequence
 
-    def _send_control(
-        self, socket: zmq.Socket, identity: bytes, kind: str, **body: Any
-    ) -> None:
+    def _send_control(self, socket: zmq.Socket, identity: bytes, kind: str, **body: Any) -> None:
         socket.send_multipart(
             [
                 identity,
@@ -325,9 +317,7 @@ class PacingServer:
                 try:
                     message = decode_message(item.frame)
                     envelope = MarketDataEnvelope.from_dict(message["body"])
-                    lateness_ns = self._clock.wait_until(
-                        envelope.sim_time_ns, self._stop_event
-                    )
+                    lateness_ns = self._clock.wait_until(envelope.sim_time_ns, self._stop_event)
                     self._metrics.set_max("maximum_lateness_ns", lateness_ns)
                     outbound = dict(message)
                     outbound_body = dict(outbound["body"])
@@ -392,9 +382,7 @@ class PacingServer:
                     socket.send(encode_message(control_message("CONTROL_RESULT", **response)))
                 except Exception as exc:
                     socket.send(
-                        encode_message(
-                            control_message("CONTROL_RESULT", ok=False, error=str(exc))
-                        )
+                        encode_message(control_message("CONTROL_RESULT", ok=False, error=str(exc)))
                     )
         except BaseException as exc:
             self._last_error = exc

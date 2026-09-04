@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import zlib
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 import msgpack
 
@@ -16,9 +17,7 @@ class WireDecodeError(ValueError):
     pass
 
 
-def encode_message(
-    message: Mapping[str, Any], *, compression_threshold: int = 64 * 1024
-) -> bytes:
+def encode_message(message: Mapping[str, Any], *, compression_threshold: int = 64 * 1024) -> bytes:
     validate_wire_message(message)
     raw = msgpack.packb(dict(message), use_bin_type=True, strict_types=False)
     flags = 0

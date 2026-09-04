@@ -18,7 +18,7 @@ def _order() -> dict:
         "price": 276450,
         "quantity": 10,
         "visibility": "VISIBLE",
-        "is_market_maker":False,
+        "is_market_maker": False,
         "insert_by_id": False,
     }
 

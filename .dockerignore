@@ -1,0 +1,21 @@
+# The pacing-server image copies two small source trees, but without this file
+# the build context is the entire repository — the vendored ABIDES fork, every
+# CMake build directory and the run logs included.
+.git
+.github
+.idea
+.venv-abides
+build
+cmake-build-*
+log
+state
+components/abides
+components/calculation-engine
+components/metrics-bridge
+components/metrics-ui
+docs
+scripts
+__pycache__
+*.pyc
+.pytest_cache
+.DS_Store

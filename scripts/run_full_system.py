@@ -11,10 +11,9 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import IO, Any
-
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCAL_PACKAGE_PATHS = (
@@ -28,7 +27,6 @@ for package_path in reversed(LOCAL_PACKAGE_PATHS):
     sys.path.insert(0, str(package_path))
 
 import zmq
-
 from market_data_protocol import (
     control_message,
     decode_message,
@@ -90,9 +88,7 @@ def _pythonpath(environment: dict[str, str]) -> str:
     return os.pathsep.join(dict.fromkeys(values))
 
 
-def _control_request(
-    endpoint: str, command: str, *, timeout_ms: int = 500
-) -> dict[str, Any]:
+def _control_request(endpoint: str, command: str, *, timeout_ms: int = 500) -> dict[str, Any]:
     context = zmq.Context.instance()
     socket = context.socket(zmq.REQ)
     socket.setsockopt(zmq.LINGER, 0)
@@ -109,9 +105,7 @@ def _control_request(
     return dict(response["body"])
 
 
-def _wait_for_pacing(
-    process: subprocess.Popen[bytes], endpoint: str, timeout: float
-) -> None:
+def _wait_for_pacing(process: subprocess.Popen[bytes], endpoint: str, timeout: float) -> None:
     deadline = time.monotonic() + timeout
     last_error: BaseException | None = None
     while time.monotonic() < deadline:
@@ -139,8 +133,7 @@ def _wait_for_metrics_bridge(
     while time.monotonic() < deadline:
         if process.poll() is not None:
             raise RuntimeError(
-                "metrics bridge exited during startup with code "
-                f"{process.returncode}"
+                f"metrics bridge exited during startup with code {process.returncode}"
             )
         try:
             with urllib.request.urlopen(endpoint, timeout=0.5) as response:
@@ -163,17 +156,11 @@ def _wait_for_drain(
     latest: dict[str, Any] = {}
     while time.monotonic() < deadline:
         if pacing.poll() is not None:
-            raise RuntimeError(
-                f"pacing server exited with code {pacing.returncode}"
-            )
+            raise RuntimeError(f"pacing server exited with code {pacing.returncode}")
         if engine.poll() is not None:
-            raise RuntimeError(
-                f"calculation engine exited with code {engine.returncode}"
-            )
+            raise RuntimeError(f"calculation engine exited with code {engine.returncode}")
         if metrics_bridge.poll() is not None:
-            raise RuntimeError(
-                f"metrics bridge exited with code {metrics_bridge.returncode}"
-            )
+            raise RuntimeError(f"metrics bridge exited with code {metrics_bridge.returncode}")
         response = _control_request(endpoint, "stats")
         latest = dict(response.get("stats", {}))
         total = int(latest.get("journal_total", 0))
@@ -211,15 +198,11 @@ def _validate_engine_log(path: Path) -> None:
     )
     contents = path.read_text(encoding="utf-8", errors="replace")
     failures = [
-        line
-        for line in contents.splitlines()
-        if any(marker in line for marker in failure_markers)
+        line for line in contents.splitlines() if any(marker in line for marker in failure_markers)
     ]
     if failures:
         preview = "; ".join(failures[:3])
-        raise RuntimeError(
-            f"calculation engine rejected market data ({preview}); see {path}"
-        )
+        raise RuntimeError(f"calculation engine rejected market data ({preview}); see {path}")
 
 
 def main() -> int:
@@ -239,7 +222,7 @@ def main() -> int:
     if ui_dir is not None and not (ui_dir / "index.html").is_file():
         raise FileNotFoundError(f"metrics UI not found: {ui_dir}")
 
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     run_id = f"{args.scenario}-{timestamp}-{os.getpid()}"
     run_dir = (ROOT / args.state_dir).resolve()
     run_dir = run_dir / run_id
@@ -298,8 +281,7 @@ def main() -> int:
             args.startup_timeout,
         )
         print(
-            "Metrics bridge: "
-            f"http://{args.metrics_host}:{args.metrics_port}/api/v1/metrics/stream",
+            f"Metrics bridge: http://{args.metrics_host}:{args.metrics_port}/api/v1/metrics/stream",
             flush=True,
         )
         if ui_dir is not None:
@@ -351,8 +333,7 @@ def main() -> int:
             )
 
         print(
-            f"Running {args.scenario.upper()} through {args.end_time} "
-            f"(seed={args.seed})",
+            f"Running {args.scenario.upper()} through {args.end_time} (seed={args.seed})",
             flush=True,
         )
         simulation = subprocess.run(
@@ -373,10 +354,7 @@ def main() -> int:
             check=False,
         )
         if simulation.returncode != 0:
-            raise RuntimeError(
-                "ABIDES simulation failed; see "
-                f"{run_dir / 'simulation.log'}"
-            )
+            raise RuntimeError(f"ABIDES simulation failed; see {run_dir / 'simulation.log'}")
 
         stats = _wait_for_drain(
             pacing,
@@ -387,9 +365,7 @@ def main() -> int:
         )
         _validate_engine_log(run_dir / "calculation-engine.log")
         metric_count = sum(
-            1
-            for line in (run_dir / "metrics.ndjson").read_bytes().splitlines()
-            if line.strip()
+            1 for line in (run_dir / "metrics.ndjson").read_bytes().splitlines() if line.strip()
         )
         print(
             "Pipeline drained: "
@@ -398,8 +374,7 @@ def main() -> int:
             flush=True,
         )
         print(
-            f"Metrics: {metric_count} records in "
-            f"{run_dir / 'metrics.ndjson'}",
+            f"Metrics: {metric_count} records in {run_dir / 'metrics.ndjson'}",
             flush=True,
         )
         if args.hold:
@@ -442,7 +417,9 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except KeyboardInterrupt:
-        raise SystemExit(130)
+        # Ctrl-C is a normal way to stop a run, so exit on it without dragging
+        # the interrupt traceback along.
+        raise SystemExit(130) from None
     except Exception as error:
         print(f"run_full_system: {error}", file=sys.stderr)
-        raise SystemExit(1)
+        raise SystemExit(1) from error

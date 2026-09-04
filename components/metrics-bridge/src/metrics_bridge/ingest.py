@@ -8,7 +8,6 @@ from typing import TextIO
 from .model import MetricValidationError, parse_metric_line
 from .store import MetricStore
 
-
 logger = logging.getLogger(__name__)
 
 ZMQ_SCHEMES = ("tcp://", "ipc://", "inproc://")
@@ -87,8 +86,7 @@ def ingest_zmq(
         import zmq
     except ImportError as error:  # pragma: no cover - environment-specific
         raise RuntimeError(
-            "ZeroMQ input requires pyzmq "
-            "(pip install 'liquidity-metrics-bridge[zmq]')"
+            "ZeroMQ input requires pyzmq (pip install 'liquidity-metrics-bridge[zmq]')"
         ) from error
 
     socket = zmq.Context.instance().socket(zmq.PULL)

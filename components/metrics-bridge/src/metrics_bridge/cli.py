@@ -62,12 +62,8 @@ def _start_ingestion(
     stop_event: threading.Event,
 ) -> tuple[threading.Thread, TextIO | None]:
     archive: TextIO | None = None
-    if args.archive is not None and not (
-        args.input == "-" or is_zmq_endpoint(args.input)
-    ):
-        raise ValueError(
-            "--archive is only supported with --input - or a ZeroMQ endpoint"
-        )
+    if args.archive is not None and not (args.input == "-" or is_zmq_endpoint(args.input)):
+        raise ValueError("--archive is only supported with --input - or a ZeroMQ endpoint")
     if args.archive is not None:
         args.archive.parent.mkdir(parents=True, exist_ok=True)
         archive = args.archive.open("a", encoding="utf-8")

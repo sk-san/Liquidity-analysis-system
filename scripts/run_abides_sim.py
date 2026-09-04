@@ -14,7 +14,6 @@ from typing import Any
 
 import numpy as np
 
-
 ROOT = Path(__file__).resolve().parents[1]
 ABIDES_ROOT = ROOT / "components" / "abides"
 LOCAL_PACKAGE_PATHS = (
@@ -38,7 +37,7 @@ class _GeneralMixtureModel:
         self.weights /= self.weights.sum()
 
     @classmethod
-    def from_json(cls, payload: str) -> "_GeneralMixtureModel":
+    def from_json(cls, payload: str) -> _GeneralMixtureModel:
         return cls(json.loads(payload))
 
     def sample(self, random_state: np.random.RandomState | None = None) -> float:
@@ -51,9 +50,7 @@ class _GeneralMixtureModel:
             return float(rng.lognormal(mean, deviation))
         if distribution["name"] == "NormalDistribution":
             return float(rng.normal(mean, deviation))
-        raise ValueError(
-            f"Unsupported ABIDES order-size distribution: {distribution['name']}"
-        )
+        raise ValueError(f"Unsupported ABIDES order-size distribution: {distribution['name']}")
 
 
 def _install_pomegranate_compatibility() -> None:
@@ -66,9 +63,7 @@ def _install_pomegranate_compatibility() -> None:
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Run an ABIDES-JPMC reference market simulation."
-    )
+    parser = argparse.ArgumentParser(description="Run an ABIDES-JPMC reference market simulation.")
     parser.add_argument("--scenario", default="rmsc04")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--end-time", default="10:00:00")
@@ -85,9 +80,7 @@ def main() -> None:
 
     from abides_core import abides
 
-    config_module = importlib.import_module(
-        f"abides_markets.configs.{args.scenario}"
-    )
+    config_module = importlib.import_module(f"abides_markets.configs.{args.scenario}")
     config = config_module.build_config(seed=args.seed, end_time=args.end_time)
 
     print(

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any
 
 SCHEMA_VERSION = 1
 PROTOCOL_VERSION = 1
@@ -84,13 +85,9 @@ def validate_order_image(order: Mapping[str, Any]) -> None:
     _require_int(order["quantity"], "quantity", minimum=1)
     visibility = _require_str(order["visibility"], "visibility")
     if visibility not in VISIBILITIES:
-        raise ProtocolValidationError(
-            f"visibility must be one of {sorted(VISIBILITIES)}"
-        )
+        raise ProtocolValidationError(f"visibility must be one of {sorted(VISIBILITIES)}")
     if not isinstance(order["is_market_maker"], bool):
-        raise ProtocolValidationError(
-            f"is_market_maker flag must be bool"
-        )
+        raise ProtocolValidationError("is_market_maker flag must be bool")
     if not isinstance(order["insert_by_id"], bool):
         raise ProtocolValidationError("insert_by_id must be a bool")
 
@@ -127,9 +124,7 @@ def validate_event_payload(event_type: str, payload: Mapping[str, Any]) -> None:
             _require_int(remaining, "passive_remaining_quantity", minimum=0)
         side = _require_str(payload.get("aggressor_side"), "aggressor_side")
         if side not in SIDES:
-            raise ProtocolValidationError(
-                f"aggressor_side must be one of {sorted(SIDES)}"
-            )
+            raise ProtocolValidationError(f"aggressor_side must be one of {sorted(SIDES)}")
     elif event_type == SNAPSHOT_EVENT_TYPE:
         orders = payload.get("orders")
         if not isinstance(orders, list):
@@ -171,9 +166,7 @@ class MarketDataEnvelope:
 
     def validate(self) -> None:
         if self.schema_version != SCHEMA_VERSION:
-            raise ProtocolValidationError(
-                f"unsupported schema_version={self.schema_version}"
-            )
+            raise ProtocolValidationError(f"unsupported schema_version={self.schema_version}")
         _require_str(self.run_id, "run_id")
         _require_int(self.transport_sequence, "transport_sequence", minimum=1)
         _require_str(self.channel_id, "channel_id")
@@ -216,7 +209,7 @@ class MarketDataEnvelope:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "MarketDataEnvelope":
+    def from_dict(cls, value: Mapping[str, Any]) -> MarketDataEnvelope:
         envelope = cls(
             schema_version=value.get("schema_version", SCHEMA_VERSION),
             run_id=value["run_id"],

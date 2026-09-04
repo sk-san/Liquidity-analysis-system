@@ -1,0 +1,25 @@
+version: 2
+updates:
+  # Keeps the SHA-pinned actions in ci.yml current. Dependabot rewrites both
+  # the SHA and the trailing version comment, which is the reason the pins
+  # carry that comment.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: ci
+
+  # The pinned formatters. Grouped so a ruff bump and a clang-format bump
+  # arrive as one pull request rather than two red ones.
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: ci
+    groups:
+      lint-tooling:
+        patterns:
+          - ruff
+          - clang-format
