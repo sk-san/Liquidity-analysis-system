@@ -95,9 +95,7 @@ METRIC_JSON_SCHEMA: dict[str, Any] = {
     "type": "object",
     "required": sorted(REQUIRED_METRIC_FIELDS),
     "properties": {
-        **{
-            field: _field_schema(field) for field in sorted(REQUIRED_METRIC_FIELDS)
-        },
+        **{field: _field_schema(field) for field in sorted(REQUIRED_METRIC_FIELDS)},
         **{field: ORDER_BOOK_LEVELS_SCHEMA for field in _ORDER_BOOK_FIELDS},
     },
     "additionalProperties": True,
@@ -146,38 +144,27 @@ def _validate_order_book_levels(metric: Mapping[str, Any], field: str) -> None:
 
         missing = set(_ORDER_BOOK_LEVEL_FIELDS).difference(level)
         if missing:
-            raise MetricValidationError(
-                f"{location} missing fields: {sorted(missing)}"
-            )
+            raise MetricValidationError(f"{location} missing fields: {sorted(missing)}")
 
         for level_field in _ORDER_BOOK_LEVEL_FIELDS:
             value = level[level_field]
             if not _is_integer(value):
-                raise MetricValidationError(
-                    f"{location}.{level_field} must be an integer"
-                )
+                raise MetricValidationError(f"{location}.{level_field} must be an integer")
             if value < 0:
-                raise MetricValidationError(
-                    f"{location}.{level_field} must not be negative"
-                )
+                raise MetricValidationError(f"{location}.{level_field} must not be negative")
 
         for level_field in _OPTIONAL_ORDER_BOOK_LEVEL_FIELDS:
             if level_field not in level:
                 continue
             value = level[level_field]
             if not _is_integer(value):
-                raise MetricValidationError(
-                    f"{location}.{level_field} must be an integer"
-                )
+                raise MetricValidationError(f"{location}.{level_field} must be an integer")
             if value < 0:
-                raise MetricValidationError(
-                    f"{location}.{level_field} must not be negative"
-                )
+                raise MetricValidationError(f"{location}.{level_field} must not be negative")
 
         if level["visible_mm_quantity"] > level["visible_quantity"]:
             raise MetricValidationError(
-                f"{location}.visible_mm_quantity must not exceed "
-                "visible_quantity"
+                f"{location}.visible_mm_quantity must not exceed visible_quantity"
             )
 
 

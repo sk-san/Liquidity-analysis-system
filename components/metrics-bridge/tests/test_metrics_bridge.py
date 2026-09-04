@@ -5,12 +5,11 @@ import io
 import json
 import threading
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
 
 import pytest
-
 from metrics_bridge.ingest import ingest_path, ingest_stream, ingest_zmq
 from metrics_bridge.model import (
     METRIC_JSON_SCHEMA,
@@ -121,7 +120,8 @@ def test_schema_describes_nested_order_book_levels() -> None:
             "visible_mm_quantity",
         }
         assert all(
-            level_schema["properties"][name] == {
+            level_schema["properties"][name]
+            == {
                 "type": "integer",
                 "minimum": 0,
             }
@@ -209,9 +209,7 @@ def test_rejects_missing_and_non_finite_values() -> None:
 
 def test_ingestion_discards_bad_lines_and_keeps_processing() -> None:
     store = MetricStore()
-    stream = io.StringIO(
-        "not-json\n" + json.dumps(metric(sequence=8)) + "\n"
-    )
+    stream = io.StringIO("not-json\n" + json.dumps(metric(sequence=8)) + "\n")
     ingest_stream(stream, store, stop_event=threading.Event())
 
     assert store.latest("ABM")[0].metric["transport_sequence"] == 8
@@ -336,9 +334,7 @@ def test_slow_subscriber_gets_an_explicit_gap_notice() -> None:
     store.unsubscribe(subscription.subscriber)
 
 
-def _get(
-    host: str, port: int, path: str
-) -> tuple[int, dict[str, str], bytes]:
+def _get(host: str, port: int, path: str) -> tuple[int, dict[str, str], bytes]:
     connection = http.client.HTTPConnection(host, port, timeout=2)
     try:
         connection.request("GET", path)

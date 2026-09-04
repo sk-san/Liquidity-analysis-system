@@ -8,7 +8,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
-
 ReplayMode = Literal["latest", "all", "none"]
 
 
@@ -170,12 +169,8 @@ class MetricStore:
                     reset = {
                         "reason": "replay_window_exceeded",
                         "last_event_id": last_event_id,
-                        "oldest_available_event_id": (
-                            history[0].event_id if history else None
-                        ),
-                        "latest_available_event_id": (
-                            history[-1].event_id if history else None
-                        ),
+                        "oldest_available_event_id": (history[0].event_id if history else None),
+                        "latest_available_event_id": (history[-1].event_id if history else None),
                     }
                 else:
                     backlog = history[matching_index + 1 :]
@@ -211,7 +206,5 @@ class MetricStore:
                 "connected_clients": len(self._subscribers),
                 "history_records": len(self._history),
                 "source_eof": self._source_eof,
-                "latest_event_id": (
-                    latest_event.event_id if latest_event is not None else None
-                ),
+                "latest_event_id": (latest_event.event_id if latest_event is not None else None),
             }

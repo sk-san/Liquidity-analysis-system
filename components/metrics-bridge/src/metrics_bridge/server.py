@@ -6,12 +6,10 @@ import threading
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from .model import METRIC_JSON_SCHEMA
 from .store import GapNotice, MetricStore, PublishedMetric
-
 
 logger = logging.getLogger(__name__)
 
@@ -225,9 +223,7 @@ class _MetricsRequestHandler(BaseHTTPRequestHandler):
             self.wfile.flush()
 
             while not self.metrics_server.stop_event.is_set():
-                event = subscription.subscriber.get(
-                    self.metrics_server.heartbeat_seconds
-                )
+                event = subscription.subscriber.get(self.metrics_server.heartbeat_seconds)
                 if event is None:
                     self.wfile.write(b": keepalive\n\n")
                 elif isinstance(event, GapNotice):
