@@ -13,4 +13,6 @@
 /log/
 /state/
 __pycache__/
+*.egg-info/
+*.egg-info
 .pytest_cache/
