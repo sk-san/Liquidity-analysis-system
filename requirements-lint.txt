@@ -2,5 +2,5 @@
 # reformat the whole tree on a patch release and fail CI on an unrelated
 # change. `make lint` installs this same file, so a clean local run is a
 # clean CI run.
-ruff==0.16.6
-clang-format==23.1.0
+ruff==0.16.9
+clang-format==23.1.1
